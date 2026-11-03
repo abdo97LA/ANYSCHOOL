@@ -1,0 +1,11 @@
+{
+  "$schema": "https://openapi.vercel.sh/vercel.json",
+  "buildCommand": "node server/tools/fetch-vendor.js || node -e \"console.log('Bibliotheques Excel/PDF non telechargees : copiez-les dans server/public/vendor')\"",
+  "outputDirectory": "static",
+  "functions": {
+    "api/index.js": { "includeFiles": "server/**", "maxDuration": 30, "memory": 1024 }
+  },
+  "rewrites": [
+    { "source": "/(.*)", "destination": "/api/index?__path=/$1" }
+  ]
+}

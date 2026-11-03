@@ -1,15 +1,25 @@
-# UniTimetable — نسخة الاختبار على GitHub Pages
+# UniTimetable — UM6SS · FM6SIPS Dakhla
 
-نسخة **مستقلة** (ملف `index.html` واحد). تعمل مباشرة في المتصفح بدون خادم.
+Gestion des emplois du temps, des étudiants, des absences, des attestations et du journal d'audit, avec des comptes individuels et des rôles vérifiés par le serveur.
 
-## الرفع والتجربة (5 دقائق)
-1. على github.com: **New repository** → اسم مثل `unitimetable` → **Public** → Create.
-2. **Add file → Upload files** → اسحبوا **محتوى هذا المجلد** (`index.html` و`.nojekyll` و`README.md`) إلى الجذر → **Commit changes**.
-3. **Settings → Pages** → Source: **Deploy from a branch** → Branch: **main** / **(root)** → Save.
-4. بعد دقيقة أو دقيقتين يظهر العنوان في أعلى الصفحة: `https://<اسم-حسابكم>.github.io/unitimetable/`
+| Dossier | Contenu |
+|---|---|
+| `server/` | Serveur Node.js (sans dépendance), interface web (`server/public`), outils, scripts Windows, tests |
+| `api/index.js` + `vercel.json` | Mise en ligne sur **Vercel** (données dans **Supabase**) |
+| `supabase/schema.sql` | Tables et fonctions de la base Supabase |
+| `desktop/` | Application Windows (Electron) : client et gestion du serveur local |
 
-## ما يعمل / ما لا يعمل في هذه النسخة
-- يعمل: الجدول، الأساتذة والقاعات والمواد، الطلاب، استيراد PDF/Excel، لوحة القيادة، الطباعة، النسخ الاحتياطي، الفوج المشترك.
-- **البيانات تُحفظ في متصفح الجهاز فقط** (لا مزامنة بين الأجهزة). استعملوا «💾 Sauvegarde» لتصديرها.
-- **لا يعمل**: روابط الأساتذة عبر واتساب، التصريحات، المزامنة — تحتاج الخادم (`um6ss-server` على Render).
-- لا ترفعوا إلى GitHub أي ملف نسخ احتياطي أو بيانات طلاب (المستودع العام يراه الجميع).
+## Trois façons de l'utiliser
+1. **En ligne (test, accès depuis partout)** : GitHub → Vercel → Supabase. Voir **[DEPLOIEMENT-VERCEL-SUPABASE.md](DEPLOIEMENT-VERCEL-SUPABASE.md)**.
+2. **Réseau local de l'établissement, sans Internet** : PC serveur Windows. Voir **[server/README-LOCAL-WINDOWS.md](server/README-LOCAL-WINDOWS.md)**.
+3. **Application de bureau** : se connecte à l'une ou l'autre version. Voir [desktop/README.md](desktop/README.md).
+
+## Tests
+```bash
+node server/tests/run-all.js
+```
+Ce script lance les règles métier, le réseau local, la phase 1 et la version en ligne (si la variable `PG` est définie). Le test de l'interface demande Playwright.
+
+## Sécurité
+- Ne publiez jamais `server/data/`, `server.env`, les certificats ni la clé Supabase `service_role` : le fichier `.gitignore` les exclut.
+- Aucun mot de passe par défaut. Le premier administrateur se crée avec `ADMIN_PASSWORD` (version en ligne) ou `windows\create-admin.ps1` (version locale).

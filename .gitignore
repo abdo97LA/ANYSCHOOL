@@ -1,0 +1,18 @@
+# données, secrets et fichiers générés : ne JAMAIS publier
+node_modules/
+server/data/
+server/logs/
+server/certs/
+server/server.env
+**/server.env
+*.pfx
+*.key
+*.pem
+*.lock
+.env
+.env.*
+.vercel/
+desktop/dist/
+desktop/server-bundle/
+_sauvegarde*/
+*.log

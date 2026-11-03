@@ -1,0 +1,12 @@
+{
+  "name": "unitimetable",
+  "version": "2.1.0",
+  "private": true,
+  "description": "UniTimetable – UM6SS FM6SIPS Dakhla : serveur (local Windows ou Vercel + Supabase), interface et application de bureau",
+  "engines": { "node": "22.x" },
+  "scripts": {
+    "dev:local": "node server/server.js",
+    "dev:cloud": "node server/tools/cloud-dev.js",
+    "test": "node server/tests/run-all.js"
+  }
+}
