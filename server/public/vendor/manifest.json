@@ -1,0 +1,14 @@
+{
+  "pdf.js": {
+    "source": "https://github.com/mozilla/pdf.js/releases/download/v3.11.174/pdfjs-3.11.174-dist.zip (build/pdf.js)",
+    "bytes": 568294,
+    "sha256": "d83766f20a4c31fbce5a29d98789cdfbef781b147441da45be1d1079e8e0f81c",
+    "at": "2026-10-25T13:09:33.062Z"
+  },
+  "pdf.worker.js": {
+    "source": "https://github.com/mozilla/pdf.js/releases/download/v3.11.174/pdfjs-3.11.174-dist.zip (build/pdf.worker.js)",
+    "bytes": 1981637,
+    "sha256": "e3f005b22146f290af16ac0dc16ab45f0df898173de1cc539d6e4092832da9d8",
+    "at": "2026-10-25T13:09:33.074Z"
+  }
+}

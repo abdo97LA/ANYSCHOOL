@@ -1,0 +1,112 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self' 'unsafe-inline'; style-src 'unsafe-inline'; img-src 'self' data:">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>UniTimetable — Configuration du serveur</title>
+<style>
+:root{--bg:#f5f6fa;--card:#fff;--tx:#1b1f2a;--mu:#6b7280;--bd:#e2e5ee;--ac:#4f46e5;--ok:#16a34a;--bad:#dc2626;color-scheme:light}
+@media (prefers-color-scheme:dark){:root{--bg:#10131b;--card:#1a1f2b;--tx:#e8eaf0;--mu:#98a0b3;--bd:#2b3243;--ac:#818cf8;color-scheme:dark}}
+*{box-sizing:border-box}body{margin:0;font:15px/1.5 "Segoe UI",system-ui,sans-serif;background:var(--bg);color:var(--tx);display:flex;min-height:100vh;align-items:center;justify-content:center;padding:16px;box-sizing:border-box}
+.card{background:var(--card);border:1px solid var(--bd);border-radius:14px;padding:28px;max-width:560px;width:100%;box-shadow:0 8px 30px rgba(0,0,0,.06)}
+h1{font-size:22px;margin:0 0 4px}p{margin:6px 0}.mu{color:var(--mu);font-size:13px}
+label{display:block;font-weight:600;margin:14px 0 4px;font-size:13px}
+.row{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+input,select{font:inherit;padding:9px 10px;border:1px solid var(--bd);border-radius:8px;background:var(--card);color:var(--tx)}
+input#host{flex:1;min-width:180px}input#port{width:100px}
+button{font:inherit;padding:9px 16px;border-radius:8px;border:1px solid var(--bd);background:var(--card);color:var(--tx);cursor:pointer}
+button.pri{background:var(--ac);color:#fff;border-color:var(--ac)}button:disabled{opacity:.5;cursor:default}
+.msg{margin-top:14px;padding:10px 12px;border-radius:8px;font-size:14px;display:none}
+.msg.ok{display:block;background:rgba(22,163,74,.1);border:1px solid var(--ok)}.msg.err{display:block;background:rgba(220,38,38,.08);border:1px solid var(--bad)}
+.warn{color:#b45309;font-size:13px;margin-top:6px}code{font-size:12px}
+</style>
+</head>
+<body>
+<div style="max-width:600px;width:100%">
+<div class="card">
+  <h1>🎓 UniTimetable</h1>
+  <p class="mu">Ce poste se connecte au serveur UniTimetable du réseau local de l’établissement. Demandez son adresse à l’administrateur.</p>
+  <div id="reason" class="msg"></div>
+  <label for="proto">Adresse du serveur</label>
+  <div class="row">
+    <select id="proto" aria-label="Protocole"><option value="http">http://</option><option value="https">https://</option></select>
+    <input id="host" placeholder="192.168.1.10" autocomplete="off" spellcheck="false" aria-label="Adresse IP ou nom du serveur">
+    <span>:</span><input id="port" value="8787" inputmode="numeric" aria-label="Port">
+  </div>
+  <div id="pub" class="warn" style="display:none">⚠ Cette adresse n’est pas une adresse de réseau local. UniTimetable est prévu pour fonctionner uniquement sur le réseau de l’établissement.</div>
+  <div class="row" style="margin-top:16px">
+    <button id="test">Tester la connexion</button>
+    <button id="save" class="pri">Enregistrer et ouvrir</button>
+    <button id="retry" style="display:none">Réessayer</button>
+  </div>
+  <div id="msg" class="msg"></div>
+  <p class="mu" style="margin-top:18px" id="where"></p>
+</div>
+<div class="card" id="srvbox" style="margin-top:16px;display:none">
+  <h2 style="font-size:17px;margin:0 0 4px">Gestion du serveur local</h2>
+  <p class="mu">Réservé à l’administrateur, sur le PC qui héberge le serveur. Fermer cette fenêtre ou l’application n’arrête pas le serveur.</p>
+  <div id="srvlogin">
+    <div class="row"><input id="su" placeholder="Identifiant administrateur" autocomplete="username" style="flex:1"><input id="sp" type="password" placeholder="Mot de passe" autocomplete="current-password" style="flex:1"><button id="sgo">Se connecter</button></div>
+    <div class="row" style="margin-top:8px"><button id="sdir">Choisir le dossier du serveur…</button><span class="mu" id="sroot"></span></div>
+  </div>
+  <div id="srvpanel" style="display:none">
+    <p>État : <b id="sstate" class="badge">—</b> <span class="mu" id="sdetail"></span></p>
+    <div class="row"><button id="sstart" class="pri">Démarrer le serveur</button><button id="srestart">Redémarrer le serveur</button><button id="sstop">Arrêter le serveur</button><button id="slogs">Voir les journaux</button><button id="sdir2">Changer de dossier…</button><button id="sout">Fermer la session admin</button></div>
+    <p class="mu" id="sinfo"></p>
+  </div>
+  <div id="smsg" class="msg"></div>
+</div>
+</div>
+<script>
+const $ = s => document.querySelector(s), api = window.electronAPI;
+const q = new URLSearchParams(location.search);
+function url() { const h = $('#host').value.trim().replace(/^https?:\/\//i, '').replace(/\/.*$/, ''), p = $('#port').value.trim(); return $('#proto').value + '://' + h + (p ? ':' + p : ''); }
+function isLan(h) { return /^(10\.|192\.168\.|172\.(1[6-9]|2\d|3[01])\.|127\.|169\.254\.)/.test(h) || h === 'localhost' || /^[a-z0-9-]+(\.local|\.lan|\.home\.arpa)?$/i.test(h); }
+function chk() { const h = $('#host').value.trim().replace(/^https?:\/\//i, '').replace(/[:\/].*$/, ''); $('#pub').style.display = h && !isLan(h) ? '' : 'none'; }
+function show(ok, t) { const m = $('#msg'); m.className = 'msg ' + (ok ? 'ok' : 'err'); m.textContent = t; }
+function busy(b) { ['#test', '#save', '#retry'].forEach(s => $(s).disabled = b); }
+$('#host').addEventListener('input', chk);
+$('#host').addEventListener('keydown', e => { if (e.key === 'Enter') $('#save').click(); });
+$('#test').onclick = async () => { busy(true); show(true, 'Test en cours…'); const r = await api.testServer(url()); busy(false); show(r.ok, r.ok ? '✔ Serveur UniTimetable ' + r.version + ' joignable' + (r.https ? ' (connexion chiffrée HTTPS).' : ' (HTTP non chiffré : réservé au réseau local).') + (r.users === false ? ' Attention : aucun compte n’a encore été créé sur ce serveur.' : '') : '✖ ' + r.error); };
+$('#save').onclick = async () => { busy(true); show(true, 'Connexion…'); const r = await api.saveServer(url()); busy(false); if (!r.ok) show(false, '✖ ' + r.error); else show(true, '✔ Enregistré. Ouverture…'); };
+$('#retry').onclick = async () => { busy(true); await api.openServer(); setTimeout(() => busy(false), 1500); };
+(async () => {
+  const cur = q.get('current') || '';
+  if (cur) { try { const u = new URL(cur); $('#proto').value = u.protocol.replace(':', ''); $('#host').value = u.hostname; $('#port').value = u.port || (u.protocol === 'https:' ? '443' : '80'); } catch (e) { } }
+  const reason = q.get('reason'); if (reason) { $('#reason').textContent = reason; $('#reason').className = 'msg err'; $('#retry').style.display = ''; }
+  chk();
+  try { const i = await api.info(); $('#where').textContent = 'Version ' + i.version + (i.server.source ? ' · adresse issue de la configuration ' + i.server.source : '') + ' · configuration de l’utilisateur : ' + i.userConfig + ' · configuration du poste (administrateur) : ' + i.machineConfig; } catch (e) { }
+  initServerBox();
+  if (reason && cur) setInterval(async () => { const r = await api.testServer(cur); if (r.ok) api.openServer(); }, 15000);   // reconnexion automatique
+})();
+/* ---------- gestion du serveur local ---------- */
+const SC = api.serverControl, SL = { stopped: 'Arrêté', starting: 'Démarrage…', running: 'En marche', error: 'Erreur' }, SCOL = { stopped: '#64748b', starting: '#b45309', running: '#16a34a', error: '#dc2626' };
+function smsg(ok, t) { const m = $('#smsg'); if (!t) { m.className = 'msg'; return; } m.className = 'msg ' + (ok ? 'ok' : 'err'); m.textContent = t; }
+function sstatus(s) {
+  if (!s) return; const b = $('#sstate'); b.textContent = SL[s.state] || s.state; b.style.color = SCOL[s.state] || '';
+  $('#sdetail').textContent = s.detail || '';
+  $('#sinfo').textContent = 'Dossier : ' + (s.serverRoot || '—') + ' · port ' + s.port + (s.https ? ' (HTTPS)' : '') + (s.version ? ' · version ' + s.version : '') + ' · moteur : ' + s.runtime;
+  $('#sstart').disabled = s.state === 'running' || s.state === 'starting'; $('#sstop').disabled = $('#srestart').disabled = s.state !== 'running';
+}
+async function sAfterLogin() { const r = await SC.status(); if (!r.ok) return; $('#srvlogin').style.display = 'none'; $('#srvpanel').style.display = ''; sstatus(r.status); }
+async function sAct(fn, label) { smsg(true, label + '…'); ['#sstart', '#sstop', '#srestart'].forEach(x => $(x).disabled = true); const r = await fn(); if (r.canceled) { smsg(false, ''); } else smsg(r.ok, r.ok ? (r.already ? 'Le serveur était déjà en marche (aucune nouvelle instance lancée).' : '✔ ' + label + ' : terminé.') : '✖ ' + (r.error || 'échec')); const s = await SC.status(); if (s.ok) sstatus(s.status); if (r.ok && /Démarr|Redémarr/.test(label)) setTimeout(() => api.openServer(), 800); }
+async function initServerBox() {
+  const a = await SC.available(); if (!a.available) return;
+  $('#srvbox').style.display = '';
+  $('#sroot').textContent = a.configured ? '' : 'Dossier non configuré';
+  SC.onStatus(sstatus);
+  const r = await SC.status(); if (r.ok) sAfterLogin();
+  $('#sgo').onclick = async () => { smsg(true, 'Vérification…'); const r = await SC.login($('#su').value, $('#sp').value); $('#sp').value = ''; if (!r.ok) return smsg(false, '✖ ' + r.error); smsg(true, 'Connecté : ' + r.user.displayName); sAfterLogin(); };
+  $('#sp').addEventListener('keydown', e => { if (e.key === 'Enter') $('#sgo').click(); });
+  const choose = async () => { const r = await SC.chooseFolder(); if (r.canceled) return; if (!r.ok) return smsg(false, '✖ ' + r.error); smsg(true, 'Dossier enregistré. Connectez-vous avec un compte administrateur.'); $('#sroot').textContent = r.status.serverRoot; $('#srvpanel').style.display = 'none'; $('#srvlogin').style.display = ''; };
+  $('#sdir').onclick = choose; $('#sdir2').onclick = choose;
+  $('#sstart').onclick = () => sAct(SC.start, 'Démarrage du serveur');
+  $('#sstop').onclick = () => sAct(SC.stop, 'Arrêt du serveur');
+  $('#srestart').onclick = () => sAct(SC.restart, 'Redémarrage du serveur');
+  $('#slogs').onclick = () => SC.openLogs();
+  $('#sout').onclick = async () => { await SC.logout(); $('#srvpanel').style.display = 'none'; $('#srvlogin').style.display = ''; smsg(true, 'Session administrateur fermée (le serveur continue de fonctionner).'); };
+}
+</script>
+</body>
+</html>

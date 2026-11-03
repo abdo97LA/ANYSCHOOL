@@ -1,0 +1,83 @@
+{
+  "name": "unitimetable",
+  "productName": "UniTimetable",
+  "version": "2.1.0",
+  "description": "UniTimetable — client Windows du serveur local (UM6SS Dakhla)",
+  "main": "main.js",
+  "scripts": {
+    "start": "electron .",
+    "bundle-server": "node scripts/copy-server.js",
+    "build:win": "node scripts/copy-server.js && electron-builder --win nsis --x64",
+    "build:portable": "node scripts/copy-server.js && electron-builder --win portable --x64",
+    "build:all": "node scripts/copy-server.js && electron-builder --win --x64",
+    "build:dir": "node scripts/copy-server.js && electron-builder --win dir --x64"
+  },
+  "build": {
+    "appId": "ma.um6ss.unitimetable",
+    "productName": "UniTimetable",
+    "copyright": "© 2026 UM6SS Dakhla",
+    "directories": {
+      "output": "dist/releases"
+    },
+    "files": [
+      "main.js",
+      "preload.js",
+      "server-control.js",
+      "src/setup.html",
+      "src/server-log.html",
+      "src/icon.ico"
+    ],
+    "win": {
+      "target": [
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        },
+        {
+          "target": "portable",
+          "arch": [
+            "x64"
+          ]
+        }
+      ],
+      "icon": "src/icon.ico",
+      "requestedExecutionLevel": "asInvoker",
+      "signAndEditExecutable": true
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "UniTimetable",
+      "installerLanguages": [
+        "English",
+        "French"
+      ],
+      "language": "1036",
+      "artifactName": "UniTimetable-Setup.exe",
+      "perMachine": false,
+      "deleteAppDataOnUninstall": false,
+      "uninstallDisplayName": "UniTimetable"
+    },
+    "portable": {
+      "artifactName": "UniTimetable-Portable.exe"
+    },
+    "extraResources": [
+      {
+        "from": "server-bundle",
+        "to": "server",
+        "filter": [
+          "**/*"
+        ]
+      }
+    ]
+  },
+  "devDependencies": {
+    "electron": "^32.3.3",
+    "electron-builder": "^25.1.8"
+  },
+  "author": "UM6SS – FM6SIPS Dakhla"
+}
