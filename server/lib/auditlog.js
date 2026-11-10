@@ -67,8 +67,8 @@ class FileAudit {
     this._last = items[items.length - 1].h || GENESIS; return items.length;
   }
   valid() { return chainValid(this.readAll()); }
-  query(q) {
-    const { f, limit, offset, order } = cleanFilter(q);
+  query(q) {   // q : filtre déjà nettoyé par cleanFilter()
+    const { f, limit, offset, order } = q && q.f ? q : cleanFilter(q);
     let a = this.readAll().filter(e => matches(e, f)); const total = a.length;
     if (order === 'desc') a = a.reverse();
     return { total, items: a.slice(offset, offset + limit) };
