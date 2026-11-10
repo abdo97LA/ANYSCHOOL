@@ -21,28 +21,24 @@ async function call(method, path, body, extra) {
   }
   return j;
 }
-/* Charge les deux documents (store : comptes, absences, audit… ; state : données de l'établissement) avec leur version */
-async function load() {
-  const rows = await call('GET', 'unitt_docs?select=id,data,version&id=in.(store,state)');
-  const out = { store: null, storeVersion: 0, state: null, stateVersion: 0 };
-  for (const r of rows || []) { out[r.id] = r.data; out[r.id + 'Version'] = Number(r.version) || 0; }
-  return out;
+/* Clés de stockage : '' = premier établissement (documents d'origine « store » / « state »), sinon id de l'établissement */
+const docId = (kind, key) => kind === 'platform' ? 'platform' : kind + (key ? ':' + key : '');
+/* Charge en un appel : documents demandés + dernière empreinte du journal d'audit de chaque « tenant » demandé */
+async function load(ids, auditTenants) {
+  const r = await call('POST', 'rpc/unitt_load', { p_ids: ids, p_tenants: auditTenants || [] });
+  const docs = {}; for (const d of (r && r.docs) || []) docs[d.id] = { data: d.data, version: Number(d.version) || 0 };
+  return { docs, last: (r && r.last) || {} };
 }
-/* Enregistrement atomique et conditionnel (version attendue) : si un autre appel a écrit entre-temps -> Conflict */
-async function save(p) {
-  return call('POST', 'rpc/unitt_save', {
-    p_store: p.store === undefined ? null : p.store, p_store_version: p.storeVersion,
-    p_state: p.state === undefined ? null : p.state, p_state_version: p.stateVersion,
-    p_hist_rev: p.histRev || null, p_hist_data: p.histData === undefined ? null : p.histData, p_hist_keep: p.histKeep || 50
-  });
-}
-async function history(rev) {
-  const rows = await call('GET', 'unitt_history?select=data&rev=eq.' + Number(rev));
+/* Enregistrement atomique et conditionnel (versions attendues + continuité de la chaîne d'audit) ; sinon Conflict */
+async function saveDocs(p) { return call('POST', 'rpc/unitt_save_docs', { p_docs: p.docs || [], p_audit: p.audit || [], p_hist: p.hist || null }); }
+async function history(key, rev) {
+  const rows = await call('GET', 'unitt_history?select=data&tenant=eq.' + encodeURIComponent(key || '') + '&rev=eq.' + Number(rev));
   return rows && rows[0] ? rows[0].data : undefined;
 }
-async function backup(reason, keep) { return call('POST', 'rpc/unitt_backup', { p_reason: String(reason || 'manuelle').slice(0, 40), p_keep: keep || 30 }); }
-async function listBackups() {
-  const rows = await call('GET', 'unitt_backups?select=id,created_at,reason,bytes&order=id.desc&limit=50');
+async function backup(key, reason, keep) { return call('POST', 'rpc/unitt_backup_t', { p_tenant: key || '', p_reason: String(reason || 'manuelle').slice(0, 40), p_keep: keep || 30 }); }
+async function listBackups(key) {
+  const rows = await call('GET', 'unitt_backups?select=id,created_at,reason,bytes&tenant=eq.' + encodeURIComponent(key || '') + '&order=id.desc&limit=50');
   return (rows || []).map(b => ({ name: 'supabase-' + b.id, createdAt: b.created_at, reason: b.reason, files: { 'store+state': { bytes: Number(b.bytes) || 0 } } }));
 }
-module.exports = { load, save, history, backup, listBackups, Conflict, configured: () => !!(URL0() && KEY()) };
+async function auditQuery(tenant, q) { return call('POST', 'rpc/unitt_audit_query', { p_tenant: tenant, p_filter: q.f || {}, p_limit: q.limit || 1000, p_offset: q.offset || 0, p_order: q.order || 'desc' }); }
+module.exports = { load, saveDocs, history, backup, listBackups, auditQuery, docId, Conflict, configured: () => !!(URL0() && KEY()) };

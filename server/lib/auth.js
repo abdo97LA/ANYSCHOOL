@@ -31,5 +31,5 @@ function passwordProblem(pw, username) {
   return '';
 }
 const newToken = () => crypto.randomBytes(32).toString('base64url');
-const publicUser = u => u && ({ id: u.id, username: u.username, displayName: u.displayName, role: u.role, teacherId: u.teacherId || '', extraPerms: u.extraPerms || [], deniedPerms: u.deniedPerms || [], disabled: !!u.disabled, mustChange: !!u.mustChange, createdAt: u.createdAt, updatedAt: u.updatedAt || '', lastLoginAt: u.lastLoginAt || '', lockedUntil: u.lockedUntil || '' });
+const publicUser = u => u && ({ id: u.id, username: u.username, displayName: u.displayName, role: u.role, jobTitle: u.jobTitle || '', email: u.email || '', teacherId: u.teacherId || '', extraPerms: u.extraPerms || [], deniedPerms: u.deniedPerms || [], disabled: !!u.disabled, mustChange: !!u.mustChange, createdAt: u.createdAt, updatedAt: u.updatedAt || '', lastLoginAt: u.lastLoginAt || '', lockedUntil: u.lockedUntil || '' });
 module.exports = { hashPassword, verifyPassword, dummyVerify, passwordProblem, newToken, sha, publicUser, USERNAME_RE };

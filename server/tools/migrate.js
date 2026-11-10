@@ -6,10 +6,10 @@
    Une sauvegarde complète vérifiée est faite avant --up et --down. Option --data-dir pour travailler sur une COPIE. */
 const fs = require('fs'), path = require('path'), zlib = require('zlib');
 const C = require('./common'); const BK = require('../lib/backup'); const MIG = require('../lib/migrations');
-const dd = C.arg('data-dir'); const DATA = dd ? path.resolve(dd) : C.cfg.DATA_DIR;
+const dd = C.arg('data-dir'); const DATA = dd ? path.resolve(dd) : C.TARGET.dir;   // --etab <code> : autre établissement
 const STORE = path.join(DATA, 'store.json'), STATE = path.join(DATA, 'state.json');
 (async () => {
-  const store = C.readJson(STORE, {}, null) || {}; store.audit = store.audit || [];
+  const store = C.readJson(STORE, {}, null) || {};
   const state = C.readJson(STATE, { rev: 0, at: '', by: '', data: null }, null);
   if (process.argv.includes('--status')) {
     const done = store.migrations || [];
@@ -19,7 +19,7 @@ const STORE = path.join(DATA, 'store.json'), STATE = path.join(DATA, 'state.json
   if (!dd) C.requireStopped('migrer les données');
   const up = process.argv.includes('--up'), down = C.arg('down');
   if (!up && !down) { console.log('Indiquez --status, --up ou --down <id>.'); process.exit(1); }
-  const bdir = dd ? path.join(DATA, 'backups') : C.cfg.BACKUP_DIR;
+  const bdir = dd ? path.join(DATA, 'backups') : C.TARGET.backupDir;
   const b = BK.create(DATA, bdir, down ? 'avant-retour-migration' : 'avant-migration', 0);
   if (!BK.verify(b.dir).ok) { console.error('Sauvegarde non vérifiée : opération annulée.'); process.exit(1); }
   console.log('Sauvegarde vérifiée : ' + b.dir);
@@ -33,7 +33,7 @@ const STORE = path.join(DATA, 'store.json'), STATE = path.join(DATA, 'state.json
     C.writeAtomic(STATE, state);
     const h = path.join(DATA, 'history'); fs.mkdirSync(h, { recursive: true }); fs.writeFileSync(path.join(h, 'rev-' + state.rev + '.json.gz'), zlib.gzipSync(JSON.stringify(state.data)));
   }
-  for (const id of ids) C.auditCli(store, down ? 'migration annulée (console)' : 'migration appliquée (console)', { migration: id });
+  for (const id of ids) C.auditCli(store, down ? 'migration annulée (console)' : 'migration appliquée (console)', { migration: id }, DATA);
   C.writeAtomic(STORE, store);
   console.log((down ? 'Migrations annulées : ' : 'Migrations appliquées : ') + ids.join(', '));
 })().catch(e => { console.error('Erreur : ' + e.message); process.exit(1); });

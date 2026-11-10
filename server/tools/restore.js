@@ -5,7 +5,7 @@
 const path = require('path'), fs = require('fs');
 const C = require('./common'); const BK = require('../lib/backup');
 (async () => {
-  const from = C.arg('from') || C.cfg.BACKUP_DIR;
+  const from = C.arg('from') || C.TARGET.backupDir;   // --etab <code> : autre établissement
   if (process.argv.includes('--list')) { for (const b of BK.list(from)) console.log(b.name + '  ' + (b.createdAt || '') + '  ' + (b.reason || '')); return; }
   C.requireStopped('restaurer une sauvegarde');
   const name = C.arg('name') || await C.ask('Nom de la sauvegarde à restaurer (voir --list) : ');
@@ -14,7 +14,7 @@ const C = require('./common'); const BK = require('../lib/backup');
   const v = BK.verify(dir); if (!v.ok) { console.error('Sauvegarde altérée ou incomplète (' + v.bad.join(', ') + '). Restauration annulée.'); process.exit(1); }
   if (!process.argv.includes('--yes')) { const a = await C.ask('Les données actuelles seront remplacées par celles du ' + v.manifest.createdAt + '. Taper OUI pour confirmer : '); if (a !== 'OUI') { console.log('Annulé.'); return; } }
   const prevRev = (C.readJson(C.STATE_FILE, {}, null) || {}).rev || 0;
-  const r = BK.restore(C.cfg.DATA_DIR, C.cfg.BACKUP_DIR, dir, 0);
+  const r = BK.restore(C.TARGET.dir, C.TARGET.backupDir, dir, 0);
   // révision supérieure à l'ancienne : les postes clients rechargent automatiquement les données restaurées
   const st = C.readJson(C.STATE_FILE, null, null);
   if (st) { st.rev = Math.max(prevRev, st.rev || 0) + 1; st.at = new Date().toISOString(); st.by = 'restauration'; C.writeAtomic(C.STATE_FILE, st, { noBackup: true }); }

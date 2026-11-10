@@ -15,7 +15,7 @@ const C = require('./common'); const BK = require('../lib/backup');
   console.log('Contenu : ' + ['sessions', 'teachers', 'subjects', 'rooms', 'levels', 'students', 'templates'].map(k => k + '=' + cnt(k)).join(', '));
   const cur = C.readJson(C.STATE_FILE, { rev: 0, data: null }, null);
   if (cur.data && !process.argv.includes('--yes')) { const a = await C.ask('Le serveur contient déjà des données (révision ' + cur.rev + '). Elles seront remplacées (une sauvegarde est faite avant). Taper OUI : '); if (a !== 'OUI') { console.log('Annulé.'); return; } }
-  const b = BK.create(C.cfg.DATA_DIR, C.cfg.BACKUP_DIR, 'avant-import', C.cfg.BACKUP_KEEP);
+  const b = BK.create(C.TARGET.dir, C.TARGET.backupDir, 'avant-import', C.cfg.BACKUP_KEEP);
   const st = { rev: (cur.rev || 0) + 1, at: new Date().toISOString(), by: 'import console', data };
   C.writeAtomic(C.STATE_FILE, st);
   const store = C.loadStore(); C.auditCli(store, 'données importées (console)', { fichier: require('path').basename(file), rev: st.rev, sauvegardePrealable: b.name }); C.saveStore(store);

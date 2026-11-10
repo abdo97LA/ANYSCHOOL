@@ -21,12 +21,16 @@ http.createServer(async (req, res) => {
   let q;
   try {
     if (req.method === 'GET' && p === '/rest/v1/unitt_docs') q = "select coalesce(json_agg(json_build_object('id',id,'data',data,'version',version)),'[]') from unitt_docs where id in ('store','state')";
-    else if (req.method === 'GET' && p === '/rest/v1/unitt_history') q = "select coalesce(json_agg(json_build_object('data',data)),'[]') from unitt_history where rev = " + parseInt(u.searchParams.get('rev').replace('eq.', ''), 10);
-    else if (req.method === 'GET' && p === '/rest/v1/unitt_backups') q = "select coalesce(json_agg(x),'[]') from (select id, created_at, reason, bytes from unitt_backups order by id desc limit 50) x";
+    else if (req.method === 'GET' && p === '/rest/v1/unitt_history') q = "select coalesce(json_agg(json_build_object('data',data)),'[]') from unitt_history where rev = " + parseInt(u.searchParams.get('rev').replace('eq.', ''), 10) + " and tenant = (" + lit([String(u.searchParams.get('tenant') || 'eq.').replace(/^eq\./, '')]) + "->>0)";
+    else if (req.method === 'GET' && p === '/rest/v1/unitt_backups') q = "select coalesce(json_agg(x),'[]') from (select id, created_at, reason, bytes from unitt_backups where tenant = (" + lit([String(u.searchParams.get('tenant') || 'eq.').replace(/^eq\./, '')]) + "->>0) order by id desc limit 50) x";
     else if (req.method === 'POST' && p === '/rest/v1/rpc/unitt_save') {
       const b = JSON.parse(body || '{}'), n = v => v === null || v === undefined ? 'null' : String(parseInt(v, 10));
       q = `select unitt_save((case when ${lit(b.p_store)}::text = 'null' then null else ${lit(b.p_store)} end), ${n(b.p_store_version)}, (case when ${lit(b.p_state)}::text = 'null' then null else ${lit(b.p_state)} end), ${n(b.p_state_version)}, ${n(b.p_hist_rev)}, (case when ${lit(b.p_hist_data)}::text = 'null' then null else ${lit(b.p_hist_data)} end), ${n(b.p_hist_keep)})`;
     } else if (req.method === 'POST' && p === '/rest/v1/rpc/unitt_backup') { const b = JSON.parse(body || '{}'); q = `select unitt_backup(${lit(b.p_reason)}->>0, ${parseInt(b.p_keep, 10) || 30})`.replace(`${lit(b.p_reason)}->>0`, `(${lit([b.p_reason])}->>0)`); }
+    else if (req.method === 'POST' && p === '/rest/v1/rpc/unitt_load') { const b = JSON.parse(body || '{}'); q = `select unitt_load(array(select json_array_elements_text(${lit(b.p_ids || [])})), array(select json_array_elements_text(${lit(b.p_tenants || [])})))`; }
+    else if (req.method === 'POST' && p === '/rest/v1/rpc/unitt_save_docs') { const b = JSON.parse(body || '{}'); q = `select unitt_save_docs(${lit(b.p_docs || [])}, ${lit(b.p_audit || [])}, (case when ${lit(b.p_hist)}::text = 'null' then null else ${lit(b.p_hist)} end))`; }
+    else if (req.method === 'POST' && p === '/rest/v1/rpc/unitt_backup_t') { const b = JSON.parse(body || '{}'); q = `select unitt_backup_t((${lit([b.p_tenant || ''])}->>0), (${lit([b.p_reason])}->>0), ${parseInt(b.p_keep, 10) || 30})`; }
+    else if (req.method === 'POST' && p === '/rest/v1/rpc/unitt_audit_query') { const b = JSON.parse(body || '{}'); q = `select unitt_audit_query((${lit([b.p_tenant])}->>0), ${lit(b.p_filter || {})}, ${parseInt(b.p_limit, 10) || 1000}, ${parseInt(b.p_offset, 10) || 0}, (${lit([b.p_order || 'desc'])}->>0))`; }
     else return send(404, { message: 'non simulé : ' + req.method + ' ' + p });
   } catch (e) { return send(400, { message: e.message }); }
   const r = await sql(q);

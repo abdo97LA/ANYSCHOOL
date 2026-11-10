@@ -60,7 +60,8 @@ function data() {
   ok('P1. migration --down : retour arrière effectué', r.status === 0 && (sDown.migrations || []).length === 0, r.stdout + r.stderr);
   ok('P1. après --up puis --down : déclarations, liens, alertes, séances surveillées identiques à l’original (aucune perte)', strip(sDown) === strip(JSON.parse(before.store)));
   ok('P1. après --up puis --down : données centrales identiques à l’original (aucune perte)', JSON.stringify(tDown.data) === JSON.stringify(JSON.parse(before.state).data));
-  ok('P1. le journal d’audit garde la trace de la migration et de son annulation (ajout seul)', sDown.audit.length >= (store0.audit || []).length + 4 && sDown.audit.slice(0, (store0.audit || []).length).every((e, i) => JSON.stringify(e) === JSON.stringify(store0.audit[i])));
+  const auL = new (require('../lib/auditlog').FileAudit)(path.join(MD, 'audit.jsonl')).readAll();
+  ok('P1. le journal d’audit (séparé, audit.jsonl) garde la trace de la migration et de son annulation (ajout seul)', auL.length >= (store0.audit || []).length + 4 && auL.slice(0, (store0.audit || []).length).every((e, i) => JSON.stringify(e) === JSON.stringify(store0.audit[i])) && require('../lib/auditlog').chainValid(auL) && sDown.audit === undefined);
 
   /* ===== 2. Démarrage sur des données v2 existantes (comptes + emplois du temps) ===== */
   const D2 = path.join(ROOT, 'v2'); fs.mkdirSync(D2, { recursive: true }); ENV = mkEnv(D2);

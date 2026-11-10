@@ -70,7 +70,7 @@ const sub=(tok,body)=>H('POST','/api/form/'+tok+'/submit',{signatureType:'electr
  const au=await H('GET','/api/audit');ok('audit log is hash-chained and valid; contains old/new values for corrections',au.j.valid===true&&au.j.items.some(e=>e.event==='déclaration corrigée'&&e.ancien!==undefined&&e.nouveau!==undefined&&e.motif));
  cookie='';ok('rules / audit / alerts / notifications / sync refuse unauthenticated calls (401)',(await Promise.all([H('GET','/api/audit'),H('GET','/api/policies'),H('PUT','/api/policies/T1',{mode:'block'}),H('GET','/api/alerts'),H('GET','/api/notifications'),H('POST','/api/sessions/sync',{sessions:[]}),H('POST','/api/_test/clock',{iso:null})])).every(x=>x.s===401));
  ok('there is no endpoint to modify or delete audit entries',(await Promise.all([H('DELETE','/api/audit'),H('PUT','/api/audit',{}),H('POST','/api/audit',{})])).every(x=>x.s===401||x.s===404));
- await stop();const st=JSON.parse(fs.readFileSync(D+'/store.json','utf8'));st.audit[3].event='falsifié';fs.writeFileSync(D+'/store.json',JSON.stringify(st));await start();
+ await stop();const L=fs.readFileSync(D+'/audit.jsonl','utf8').split('\n');const e3=JSON.parse(L[3]);e3.event='falsifié';L[3]=JSON.stringify(e3);fs.writeFileSync(D+'/audit.jsonl',L.join('\n'));await start();
  const lg2=await fetch(B+'/api/login',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({password:PW})});cookie=lg2.headers.get('set-cookie').split(';')[0];
  ok('tampering with an audit entry in the data file is detected (chain invalid)',(await H('GET','/api/audit')).j.valid===false);
  await stop();console.log(fails?'FAILURES: '+fails:'ALL PASSED')})().catch(async e=>{console.log('ERROR',e);try{await stop()}catch(x){}process.exit(1)});
