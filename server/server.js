@@ -309,7 +309,7 @@ async function bootstrapSuperAdmin() {
   const un = String(process.env.SUPERADMIN_USERNAME || '').trim().toLowerCase(), pw = process.env.SUPERADMIN_PASSWORD || '';
   if (!un || !pw) return false;
   if (!A.USERNAME_RE.test(un)) { log.error('SUPERADMIN_USERNAME invalide (3 à 32 caractères : minuscules, chiffres, . _ -)'); return false; }
-  const pb = PF.superPasswordProblem(pw, un); if (pb) { log.error('SUPERADMIN_PASSWORD refusé : ' + pb); return false; }
+  const pb = PF.superPasswordProblem(pw, un); if (pb) { if (!bootstrapSuperAdmin.warned) { bootstrapSuperAdmin.warned = true; log.error('SUPERADMIN_PASSWORD refusé : ' + pb); } return false; }
   platform.admins.push({ id: rid(8), username: un, displayName: String(process.env.SUPERADMIN_NAME || 'Propriétaire de la plateforme').slice(0, 80), email: '', pw: await A.hashPassword(pw, cfg.SCRYPT_N), totp: null, failed: 0, lockedUntil: '', createdAt: new Date().toISOString(), mustChange: true, disabled: false });
   paudit('compte Super Admin créé depuis SUPERADMIN_PASSWORD', null, { compte: un }); persistPlatform();
   log.warn('Compte Super Admin « ' + un + ' » créé. Changez son mot de passe à la première connexion, activez la double authentification, puis retirez SUPERADMIN_PASSWORD de la configuration.');
@@ -565,6 +565,8 @@ async function tenantRoute(req, res, u) {
     return json(res, 200, { ok: true });
   }
   if (req.user.mustChange) return fail(res, 403, 'Vous devez d’abord changer votre mot de passe.', { mustChange: true });
+  /* Super Admin en consultation : lecture seule, quelle que soit la route */
+  if (req.user.superAdmin && req.user.superAdminMode === 'consultation' && M !== 'GET') { audit('modification refusée (Super Admin en consultation)', req, { chemin: p }); persist(); return fail(res, 403, 'Mode consultation : aucune modification possible. Entrez en mode intervention depuis la console Super Admin.', { readOnly: true }); }
 
   /* ---- comptes et rôles (administrateur de l'établissement) ---- */
   if (M === 'GET' && p === '/api/roles') {
@@ -610,7 +612,6 @@ async function tenantRoute(req, res, u) {
   }
   /* Super Admin en consultation : les accès aux données sont inscrits au journal de l'établissement */
   if (req.user.superAdmin && M === 'GET' && (/^\/api\/(users|absences|audit|alerts|policies|forms)$/.test(p) || /^\/api\/sessions\//.test(p) || (p === '/api/state' && !(u.searchParams.get('since') !== null && +u.searchParams.get('since') === state.rev)))) { audit('consultation (Super Admin)', req, { chemin: p, section: 'consultation Super Admin' }); persist(); }
-  if (req.user.superAdmin && req.user.superAdminMode === 'consultation' && M !== 'GET') { audit('modification refusée (Super Admin en consultation)', req, { chemin: p }); persist(); return fail(res, 403, 'Mode consultation : aucune modification possible. Entrez en mode intervention depuis la console Super Admin.', { readOnly: true }); }
 
   /* ---- serveur et sauvegardes (administrateur) ---- */
   if (M === 'GET' && p === '/api/server/info') {
@@ -871,7 +872,7 @@ function platformSession(req) {
   const tok = psidOf(req); if (!tok) return null;
   const h = sha(tok), s = platform.logins[h]; if (!s) return null;
   const now = Date.now(), st = platform.settings;
-  if (now - s.createdAt > (st.superAdminMaxHours || 8) * 3600e3 || now - s.lastSeen > (st.superAdminIdleMinutes || 30) * 60e3 || ip(req) !== s.ip) { delete platform.logins[h]; persistPlatform(); return null; }
+  if (now - s.createdAt > (st.superAdminMaxHours || 8) * 3600e3 || now - s.lastSeen > (st.superAdminIdleMinutes || 30) * 60e3 || (st.bindSuperAdminIp !== false && ip(req) !== s.ip)) { delete platform.logins[h]; persistPlatform(); return null; }
   const a = platform.admins.find(x => x.id === s.adminId); if (!a || a.disabled) { delete platform.logins[h]; persistPlatform(); return null; }
   if (now - s.lastSeen > 60e3) { s.lastSeen = now; persistPlatform(); }
   return { hash: h, admin: a };
@@ -955,6 +956,7 @@ async function platformRoute(req, res, u) {
       if (b.platformName !== undefined) st.platformName = str(b.platformName, 80) || 'UniTimetable';
       if (b.defaultTenantId !== undefined) { if (b.defaultTenantId && !tenantById(b.defaultTenantId)) return fail(res, 400, 'Établissement par défaut introuvable'); st.defaultTenantId = b.defaultTenantId || ''; }
       if (b.allowDefaultLogin !== undefined) st.allowDefaultLogin = !!b.allowDefaultLogin;
+      if (b.bindSuperAdminIp !== undefined) st.bindSuperAdminIp = !!b.bindSuperAdminIp;
       if (b.superAdminIdleMinutes !== undefined) st.superAdminIdleMinutes = n(b.superAdminIdleMinutes, 5, 240, 30);
       if (b.superAdminMaxHours !== undefined) st.superAdminMaxHours = n(b.superAdminMaxHours, 1, 24, 8);
       if (b.workspaceMaxHours !== undefined) st.workspaceMaxHours = n(b.workspaceMaxHours, 1, 12, 2);

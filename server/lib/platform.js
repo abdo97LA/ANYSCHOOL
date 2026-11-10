@@ -9,7 +9,7 @@ const SLUG_RE = /^[a-z0-9][a-z0-9-]{1,30}[a-z0-9]$/;
 const RESERVED_SLUGS = new Set(['platform', 'admin', 'api', 'superadmin', 'super-admin', 'root', 'system', 'www', 'vendor']);
 const STATUSES = { active: 'Actif', suspended: 'Suspendu', disabled: 'Désactivé' };
 
-const emptyPlatform = () => ({ version: 1, tenants: [], admins: [], logins: {}, settings: { platformName: 'UniTimetable', defaultTenantId: '', allowDefaultLogin: true, superAdminIdleMinutes: 30, superAdminMaxHours: 8, workspaceMaxHours: 2 } });
+const emptyPlatform = () => ({ version: 1, tenants: [], admins: [], logins: {}, settings: { platformName: 'UniTimetable', defaultTenantId: '', allowDefaultLogin: true, superAdminIdleMinutes: 30, superAdminMaxHours: 8, workspaceMaxHours: 2, bindSuperAdminIp: true } });
 function normalize(p) {
   const d = emptyPlatform();
   p = p && typeof p === 'object' ? p : d;
