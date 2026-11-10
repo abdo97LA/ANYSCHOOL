@@ -1,6 +1,6 @@
 /* Lance toutes les suites de tests : node tests/run-all.js  (ou npm test) */
 const cp = require('child_process'), path = require('path');
-const suites = ['rules.test.js', 'lan.test.js', 'phase1.test.js', 'cloud.test.js', 'tenancy.test.js', 'e2e.ui.test.js'];
+const suites = ['rules.test.js', 'lan.test.js', 'phase1.test.js', 'cloud.test.js', 'tenancy.test.js', 'e2e.ui.test.js', 'platform.ui.test.js'];
 let bad = 0;
 for (const s of suites) {
   console.log('\n===== ' + s + ' =====');

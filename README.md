@@ -9,6 +9,9 @@ Gestion des emplois du temps, des étudiants, des absences, des attestations et 
 | `supabase/schema.sql` | Tables et fonctions de la base Supabase |
 | `desktop/` | Application Windows (Electron) : client et gestion du serveur local |
 
+## Plateforme multi-établissements (v3)
+Un compte **Super Admin** (console `/platform`) gère plusieurs établissements totalement isolés, chacun avec ses comptes, ses données et son journal d'audit inaltérable. Voir **[PLATEFORME-MULTI-ETABLISSEMENTS.md](PLATEFORME-MULTI-ETABLISSEMENTS.md)**.
+
 ## Trois façons de l'utiliser
 1. **En ligne (test, accès depuis partout)** : GitHub → Vercel → Supabase. Voir **[DEPLOIEMENT-VERCEL-SUPABASE.md](DEPLOIEMENT-VERCEL-SUPABASE.md)**.
 2. **Réseau local de l'établissement, sans Internet** : PC serveur Windows. Voir **[server/README-LOCAL-WINDOWS.md](server/README-LOCAL-WINDOWS.md)**.

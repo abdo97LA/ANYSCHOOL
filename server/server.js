@@ -413,7 +413,7 @@ const can_ = (req, p) => can(req.user, p);
 function need(req, res, ...ps) { if (ps.some(p => can_(req, p))) return true; fail(res, 403, 'Action non autorisée pour votre rôle'); return false; }
 
 const today = () => MD.casaDate(nowMs());
-const tenantInfo = t => t && ({ slug: t.slug, name: t.name, nameAr: t.nameAr || '', shortName: t.shortName || '' });
+const tenantInfo = t => t && ({ slug: t.slug, name: t.name, nameAr: t.nameAr || '', shortName: t.shortName || '', legacy: !!t.legacy });
 /* Établissement de la requête — déterminé UNIQUEMENT côté serveur :
    lien de déclaration -> préfixe du jeton ; connexion -> code d'établissement saisi (ou établissement par défaut) ;
    sinon -> préfixe du jeton de session. Le jeton doit ensuite exister dans CET établissement (vérifié par empreinte). */

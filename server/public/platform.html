@@ -1,0 +1,259 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex">
+<title>Console de la plateforme — UniTimetable</title>
+<style>
+:root{--bg:#f4f5f9;--card:#fff;--tx:#1b1f2a;--mu:#6b7280;--bd:#e2e5ee;--ac:#4338ca;--acx:#fff;--ok:#15803d;--bad:#b91c1c;--warn:#b45309;--side:#111827;--sidetx:#e5e7eb}
+@media (prefers-color-scheme:dark){:root{--bg:#0f1218;--card:#181c25;--tx:#e8eaf0;--mu:#98a0b3;--bd:#2b3243;--ac:#818cf8;--acx:#0f1218;--ok:#4ade80;--bad:#f87171;--warn:#fbbf24;--side:#0b0d12}}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--tx);font:14px/1.45 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif}
+header{background:var(--side);color:var(--sidetx);display:flex;align-items:center;gap:12px;padding:10px 16px;flex-wrap:wrap}
+header b{font-size:15px}header .sp{flex:1}
+header button{background:transparent;color:var(--sidetx);border:1px solid #374151}
+nav{display:flex;gap:4px;flex-wrap:wrap}
+nav button{border:0;background:transparent;color:#9ca3af;padding:6px 10px;border-radius:6px}
+nav button.on{background:#1f2937;color:#fff}
+main{max-width:1180px;margin:0 auto;padding:16px}
+.card{background:var(--card);border:1px solid var(--bd);border-radius:10px;padding:14px 16px;margin-bottom:14px}
+h1{font-size:20px;margin:0 0 10px}h2{font-size:16px;margin:0 0 10px}h3{font-size:15px;margin:12px 0 6px}
+.row{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+.row>input,.row>select{width:auto}
+.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:10px}
+label{display:block;font-size:12px;color:var(--mu);margin:8px 0 3px;font-weight:600}
+input,select,textarea{width:100%;padding:7px 9px;border:1px solid var(--bd);border-radius:7px;background:var(--bg);color:var(--tx);font:inherit}
+button{padding:7px 12px;border:1px solid var(--bd);border-radius:7px;background:var(--card);color:var(--tx);font:inherit;cursor:pointer}
+button.pri{background:var(--ac);color:var(--acx);border-color:var(--ac)}
+button.dng{color:var(--bad);border-color:var(--bad)}
+button:disabled{opacity:.5;cursor:default}
+.mu{color:var(--mu)}.err{color:var(--bad);min-height:18px;margin-top:6px}
+.tw{overflow:auto;border:1px solid var(--bd);border-radius:8px}
+table{border-collapse:collapse;width:100%;font-size:13px}
+th,td{padding:6px 8px;border-bottom:1px solid var(--bd);text-align:left;vertical-align:top}
+th{background:var(--bg);position:sticky;top:0;font-weight:600}
+tr.clk{cursor:pointer}tr.clk:hover td{background:var(--bg)}
+.pill{display:inline-block;padding:1px 8px;border-radius:99px;font-size:12px;font-weight:600}
+.st-active{background:#dcfce7;color:#166534}.st-suspended{background:#fef3c7;color:#92400e}.st-disabled{background:#fee2e2;color:#991b1b}.st-expired{background:#fee2e2;color:#991b1b}
+@media (prefers-color-scheme:dark){.st-active{background:#14532d;color:#bbf7d0}.st-suspended{background:#78350f;color:#fde68a}.st-disabled,.st-expired{background:#7f1d1d;color:#fecaca}}
+.stat{border:1px solid var(--bd);border-radius:8px;padding:8px 10px}.stat b{font-size:18px;display:block}
+.modal{position:fixed;inset:0;background:rgba(0,0,0,.45);display:none;align-items:flex-start;justify-content:center;padding:40px 12px;overflow:auto;z-index:50}
+.modal.show{display:flex}.mbox{background:var(--card);border-radius:12px;padding:18px;width:min(560px,100%)}
+.toast{position:fixed;bottom:16px;left:50%;transform:translateX(-50%);background:#111827;color:#fff;padding:8px 14px;border-radius:8px;display:none;z-index:60}
+details summary{cursor:pointer}
+code{background:var(--bg);padding:1px 5px;border-radius:4px;word-break:break-all}
+.warnbox{border-left:4px solid var(--warn);padding:8px 12px;background:var(--bg);border-radius:6px}
+</style>
+</head>
+<body>
+<header><b>🛡 <span id="pname">UniTimetable</span> — Console de la plateforme</b><nav id="nav"></nav><span class="sp"></span><span id="who" class="mu" style="color:#9ca3af"></span></header>
+<main id="app"><div class="card">Chargement…</div></main>
+<div class="modal" id="modal"><div class="mbox" id="mbox"></div></div>
+<div class="toast" id="toast"></div>
+<script>
+'use strict';
+const $ = s => document.querySelector(s);
+const esc = v => String(v == null ? '' : v).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+const dt = s => s ? String(s).slice(0, 16).replace('T', ' ') : '—';
+async function api(m, p, b) {
+  let r; try { r = await fetch(p, { method: m, credentials: 'same-origin', headers: b ? { 'Content-Type': 'application/json' } : {}, body: b ? JSON.stringify(b) : undefined }); } catch (e) { const x = new Error('Le serveur ne répond pas.'); x.network = true; throw x; }
+  let j = null; try { j = await r.json(); } catch (e) { }
+  if (!r.ok) { const e = new Error((j && j.error) || ('Erreur ' + r.status)); e.status = r.status; e.body = j; if (r.status === 401 && ME && !/login/.test(p)) { ME = null; render(); } throw e; }
+  return j;
+}
+function toast(m, bad) { const t = $('#toast'); t.textContent = m; t.style.background = bad ? '#b91c1c' : '#111827'; t.style.display = 'block'; clearTimeout(toast.t); toast.t = setTimeout(() => t.style.display = 'none', 3500); }
+function modal(h) { $('#mbox').innerHTML = h; $('#modal').classList.add('show'); }
+function closeModal() { $('#modal').classList.remove('show'); }
+$('#modal').onclick = e => { if (e.target.id === 'modal') closeModal(); };
+
+let ME = null, VIEW = 'tenants', TEN = [], STATUSES = {}, TODAY = '', CUR = null, ROLES = null, SETTINGS = null;
+const statusOf = t => (t.status === 'active' && t.subscription && t.subscription.endsAt && t.subscription.endsAt < TODAY) ? 'expired' : t.status;
+const pill = t => { const s = statusOf(t); return `<span class="pill st-${s}">${s === 'expired' ? 'Abonnement expiré' : esc(STATUSES[s] || s)}</span>`; };
+
+async function init() {
+  const m = await api('GET', '/api/platform/me').catch(() => null);
+  if (m) { $('#pname').textContent = m.platformName || 'UniTimetable'; document.title = 'Console — ' + (m.platformName || 'UniTimetable'); }
+  ME = m && m.auth ? m.admin : null; SETUP = m ? m.setupRequired : false;
+  render();
+}
+let SETUP = false;
+function render() {
+  const nav = $('#nav'), who = $('#who');
+  if (!ME) { nav.innerHTML = ''; who.innerHTML = ''; return loginView(); }
+  who.innerHTML = `${esc(ME.displayName)} <button onclick="logout()" style="margin-left:6px">Se déconnecter</button>`;
+  if (ME.mustChange) { nav.innerHTML = ''; return pwView(true); }
+  nav.innerHTML = [['tenants', 'Établissements'], ['audit', 'Journal de la plateforme'], ['settings', 'Paramètres'], ['account', 'Mon compte']].map(([k, l]) => `<button class="${VIEW === k ? 'on' : ''}" onclick="go('${k}')">${l}</button>`).join('');
+  ({ tenants: tenantsView, tenant: tenantView, audit: pAuditView, settings: settingsView, account: accountView })[VIEW]();
+}
+function go(v) { VIEW = v; render(); }
+
+/* ---------- connexion ---------- */
+function loginView() {
+  $('#app').innerHTML = `<div class="card" style="max-width:420px;margin:40px auto"><h1>Console Super Admin</h1><p class="mu" style="font-size:13px">Accès réservé au propriétaire de la plateforme. Les administrateurs d’établissement se connectent depuis <a href="/">l’application</a>.</p>
+  ${SETUP ? '<div class="warnbox">Aucun compte Super Admin n’existe encore. Sur le serveur : <code>node tools/create-superadmin.js</code> (serveur local) ou variables <code>SUPERADMIN_USERNAME</code> / <code>SUPERADMIN_PASSWORD</code> (en ligne).</div>' : ''}
+  <label>Identifiant</label><input id="l_u" autocomplete="username" autocapitalize="none"><label>Mot de passe</label><input id="l_p" type="password" autocomplete="current-password" onkeydown="if(event.key==='Enter')doLogin()">
+  <div id="l_tw" style="display:none"><label>Code de double authentification (application d’authentification)</label><input id="l_t" inputmode="numeric" autocomplete="one-time-code" maxlength="6" onkeydown="if(event.key==='Enter')doLogin()"></div>
+  <div class="err" id="ferr"></div><div class="row" style="margin-top:10px"><button class="pri" id="l_go" onclick="doLogin()">Se connecter</button></div></div>`;
+  setTimeout(() => $('#l_u') && $('#l_u').focus(), 30);
+}
+async function doLogin() {
+  $('#l_go').disabled = true; $('#ferr').textContent = '';
+  try { const r = await api('POST', '/api/platform/login', { username: $('#l_u').value.trim().toLowerCase(), password: $('#l_p').value, totp: $('#l_t').value.trim() || undefined }); ME = r.admin; VIEW = 'tenants'; render(); }
+  catch (e) { $('#l_go').disabled = false; if (e.body && e.body.totpRequired) { $('#l_tw').style.display = ''; setTimeout(() => $('#l_t').focus(), 30); } $('#ferr').textContent = e.message; }
+}
+async function logout() { try { await api('POST', '/api/platform/logout', {}); } catch (e) { } ME = null; render(); }
+function pwView(forced) {
+  $('#app').innerHTML = `<div class="card" style="max-width:460px;margin:30px auto"><h1>${forced ? 'Choisissez votre mot de passe' : 'Changer le mot de passe'}</h1>${forced ? '<p class="mu">Le mot de passe initial doit être remplacé avant tout accès.</p>' : ''}<label>Mot de passe actuel</label><input id="p_c" type="password" autocomplete="current-password"><label>Nouveau mot de passe (14 caractères minimum, au moins 3 types : minuscules, majuscules, chiffres, symboles)</label><input id="p_n" type="password" autocomplete="new-password"><label>Confirmation</label><input id="p_n2" type="password" autocomplete="new-password"><div class="err" id="ferr"></div><div class="row" style="margin-top:10px"><button class="pri" onclick="pwDo()">Enregistrer</button>${forced ? '' : '<button onclick="go(\'account\')">Annuler</button>'}</div></div>`;
+}
+async function pwDo() {
+  if ($('#p_n').value !== $('#p_n2').value) return $('#ferr').textContent = 'Les deux saisies sont différentes';
+  try { await api('POST', '/api/platform/password', { current: $('#p_c').value, next: $('#p_n').value }); ME.mustChange = false; toast('Mot de passe modifié'); VIEW = 'account'; render(); } catch (e) { $('#ferr').textContent = e.message; }
+}
+
+/* ---------- établissements ---------- */
+async function tenantsView() {
+  $('#app').innerHTML = '<div class="card">Chargement…</div>';
+  try { const r = await api('GET', '/api/platform/tenants'); TEN = r.items; STATUSES = r.statuses; TODAY = r.today; SETTINGS = SETTINGS || { defaultTenantId: r.defaultTenantId }; SETTINGS.defaultTenantId = r.defaultTenantId; } catch (e) { $('#app').innerHTML = `<div class="card err">${esc(e.message)}</div>`; return; }
+  const q = (tenantsView.q || '').toLowerCase(), list = TEN.filter(t => !q || (t.name + ' ' + t.slug + ' ' + (t.nameAr || '')).toLowerCase().includes(q));
+  const cnt = s => TEN.filter(t => statusOf(t) === s).length;
+  $('#app').innerHTML = `<div class="grid" style="margin-bottom:14px"><div class="stat card" style="margin:0"><span class="mu">Établissements</span><b>${TEN.length}</b></div><div class="stat card" style="margin:0"><span class="mu">Actifs</span><b style="color:var(--ok)">${cnt('active')}</b></div><div class="stat card" style="margin:0"><span class="mu">Suspendus / expirés</span><b style="color:var(--warn)">${cnt('suspended') + cnt('expired')}</b></div><div class="stat card" style="margin:0"><span class="mu">Désactivés</span><b>${cnt('disabled')}</b></div></div>
+  <div class="card"><div class="row"><h2 style="margin:0;flex:1">Établissements abonnés</h2><input placeholder="Rechercher…" style="width:220px" value="${esc(tenantsView.q || '')}" oninput="tenantsView.q=this.value;clearTimeout(tenantsView.t);tenantsView.t=setTimeout(tenantsView,250)"><button class="pri" onclick="tenantDlg()">+ Nouvel établissement</button></div>
+  <div class="tw" style="margin-top:10px"><table><tr><th>Établissement</th><th>Code de connexion</th><th>Statut</th><th>Abonnement</th><th>Créé le</th></tr>${list.map(t => `<tr class="clk" onclick="openTenant('${t.id}')"><td><b>${esc(t.name)}</b>${t.nameAr ? '<br><span class="mu" dir="rtl">' + esc(t.nameAr) + '</span>' : ''}${t.id === SETTINGS.defaultTenantId ? ' <span class="mu" style="font-size:11px">(par défaut)</span>' : ''}</td><td><code>${esc(t.slug)}</code></td><td>${pill(t)}</td><td>${esc((t.subscription || {}).plan || '')}${t.subscription && t.subscription.endsAt ? ' · jusqu’au ' + esc(t.subscription.endsAt) : ' · sans échéance'}</td><td>${dt(t.createdAt).slice(0, 10)}</td></tr>`).join('') || '<tr><td colspan="5" class="mu">Aucun établissement.</td></tr>'}</table></div></div>`;
+}
+function tenantForm(t) {
+  t = t || { contact: {}, subscription: {}, settings: {} }; const c = t.contact || {}, s = t.subscription || {}, st = t.settings || {};
+  return `<div class="row"><div style="flex:2;min-width:220px"><label>Nom de l’établissement</label><input id="t_n" value="${esc(t.name || '')}"></div><div style="flex:1;min-width:160px"><label>Code de connexion (unique)</label><input id="t_s" autocapitalize="none" placeholder="ex. fm6sips-dakhla" value="${esc(t.slug || '')}"></div></div>
+  <div class="row"><div style="flex:2;min-width:220px"><label>Nom en arabe</label><input id="t_a" dir="rtl" value="${esc(t.nameAr || '')}"></div><div style="flex:1;min-width:160px"><label>Nom court</label><input id="t_sh" value="${esc(t.shortName || '')}"></div></div>
+  <h3>Contact</h3><div class="row"><div style="flex:1"><label>Responsable</label><input id="t_cp" value="${esc(c.person || '')}"></div><div style="flex:1"><label>E-mail</label><input id="t_ce" value="${esc(c.email || '')}"></div><div style="flex:1"><label>Téléphone</label><input id="t_ct" value="${esc(c.phone || '')}"></div></div>
+  <div class="row"><div style="flex:2"><label>Adresse</label><input id="t_ca" value="${esc(c.address || '')}"></div><div style="flex:1"><label>Ville</label><input id="t_cv" value="${esc(c.city || '')}"></div><div style="flex:1"><label>Pays</label><input id="t_cc" value="${esc(c.country || 'Maroc')}"></div></div>
+  <h3>Abonnement et paramètres</h3><div class="row"><div style="flex:1"><label>Formule</label><input id="t_pl" value="${esc(s.plan || 'standard')}"></div><div style="flex:1"><label>Début</label><input id="t_sd" type="date" value="${esc(s.startsAt || '')}"></div><div style="flex:1"><label>Fin (vide = sans échéance)</label><input id="t_se" type="date" value="${esc(s.endsAt || '')}"></div></div>
+  <div class="row"><div style="flex:1"><label>Comptes actifs maximum (0 = illimité)</label><input id="t_mu" type="number" min="0" value="${esc(st.maxUsers || 0)}"></div><div style="flex:1"><label>Langue</label><select id="t_lo">${[['fr', 'Français'], ['ar', 'العربية'], ['en', 'English']].map(([k, l]) => `<option value="${k}" ${st.locale === k ? 'selected' : ''}>${l}</option>`).join('')}</select></div><div style="flex:1"><label>Fuseau horaire</label><input id="t_tz" value="${esc(st.timezone || 'Africa/Casablanca')}"></div></div>
+  <label>Notes internes (abonnement)</label><textarea id="t_no" rows="2">${esc(s.notes || '')}</textarea>`;
+}
+const tenantBody = () => ({ name: $('#t_n').value, slug: $('#t_s').value.trim().toLowerCase(), nameAr: $('#t_a').value, shortName: $('#t_sh').value, contact: { person: $('#t_cp').value, email: $('#t_ce').value, phone: $('#t_ct').value, address: $('#t_ca').value, city: $('#t_cv').value, country: $('#t_cc').value }, subscription: { plan: $('#t_pl').value, startsAt: $('#t_sd').value, endsAt: $('#t_se').value, notes: $('#t_no').value }, settings: { maxUsers: +$('#t_mu').value || 0, locale: $('#t_lo').value, timezone: $('#t_tz').value } });
+function genPw() { const c = 'abcdefghjkmnpqrstuvwxyzABCDEFGHJKLMNPQRSTUVWXYZ23456789', a = new Uint32Array(14); crypto.getRandomValues(a); return Array.from(a, x => c[x % c.length]).join('').replace(/(.{4})(.{5})(.{5})/, '$1-$2-$3'); }
+function tenantDlg() {
+  modal(`<h2>Nouvel établissement</h2>${tenantForm(null)}<h3>Administrateur de l’établissement</h3><p class="mu" style="font-size:12px">Il gérera seul les comptes de ses employés. Mot de passe temporaire à lui communiquer en main propre : il devra le changer à la première connexion.</p>
+  <div class="row"><div style="flex:1"><label>Identifiant</label><input id="a_u" autocapitalize="none" value="admin"></div><div style="flex:1"><label>Nom complet</label><input id="a_n"></div></div>
+  <div class="row"><div style="flex:1"><label>E-mail</label><input id="a_e"></div><div style="flex:1"><label>Mot de passe temporaire</label><div class="row"><input id="a_p" style="flex:1" value="${genPw()}"><button onclick="$('#a_p').value=genPw()">↻</button></div></div></div>
+  <div class="err" id="ferr"></div><div class="row" style="margin-top:12px"><button class="pri" onclick="tenantCreate()">Créer l’établissement</button><button onclick="closeModal()">Annuler</button></div>`);
+  $('#t_n').oninput = () => { if (!$('#t_s').dataset.touched) $('#t_s').value = $('#t_n').value.normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 32); };
+  $('#t_s').oninput = () => $('#t_s').dataset.touched = 1;
+}
+async function tenantCreate() {
+  const b = tenantBody(); b.admin = { username: $('#a_u').value.trim().toLowerCase(), displayName: $('#a_n').value, email: $('#a_e').value, password: $('#a_p').value };
+  try { const r = await api('POST', '/api/platform/tenants', b); closeModal(); modal(`<h2>Établissement créé</h2><p>Transmettez ces informations à l’administrateur de <b>${esc(r.tenant.name)}</b> :</p><div class="card"><div>Adresse : <code>${esc(location.origin)}/?etab=${esc(r.tenant.slug)}</code></div><div>Code de l’établissement : <code>${esc(r.tenant.slug)}</code></div><div>Identifiant : <code>${esc(b.admin.username)}</code></div><div>Mot de passe temporaire : <code>${esc(b.admin.password)}</code></div></div><p class="mu" style="font-size:12px">Ce mot de passe n’est plus affiché ensuite (seule son empreinte est conservée).</p><div class="row"><button class="pri" onclick="closeModal();openTenant('${r.tenant.id}')">Ouvrir l’établissement</button></div>`); }
+  catch (e) { $('#ferr').textContent = e.message; }
+}
+async function openTenant(id) { CUR = { id, tab: 'info' }; VIEW = 'tenant'; render(); }
+async function tenantView() {
+  $('#app').innerHTML = '<div class="card">Chargement…</div>';
+  let r; try { r = await api('GET', '/api/platform/tenants/' + CUR.id); if (!ROLES) ROLES = await api('GET', '/api/platform/roles'); } catch (e) { $('#app').innerHTML = `<div class="card err">${esc(e.message)}</div>`; return; }
+  const t = r.tenant, s = r.stats; CUR.t = t; if (!TODAY) TODAY = new Date().toISOString().slice(0, 10);
+  $('#app').innerHTML = `<div class="row" style="margin-bottom:10px"><button onclick="go('tenants')">← Établissements</button><h1 style="margin:0;flex:1">${esc(t.name)} ${pill(t)}</h1><button onclick="enterDlg('view')">👁 Consulter son espace</button><button class="dng" onclick="enterDlg('intervene')">✎ Intervenir</button></div>
+  <div class="grid" style="margin-bottom:14px">${[['Comptes actifs', s.activeUsers + ' / ' + s.users], ['Étudiants', s.students], ['Enseignants', s.teachers], ['Séances', s.sessions], ['Déclarations d’absence', s.absences], ['Sessions ouvertes', s.activeSessions], ['Dernière modification', dt(s.lastChangeAt) + (s.lastChangeBy ? ' · ' + s.lastChangeBy : '')], ['Dernière connexion', dt(s.lastLoginAt)]].map(([l, v]) => `<div class="stat card" style="margin:0"><span class="mu">${l}</span><b style="font-size:15px">${esc(v)}</b></div>`).join('')}</div>
+  <div class="card"><div class="row" style="margin-bottom:8px">${[['info', 'Informations'], ['users', 'Comptes'], ['audit', 'Journal d’activité'], ['status', 'Statut et abonnement']].map(([k, l]) => `<button class="${CUR.tab === k ? 'pri' : ''}" onclick="CUR.tab='${k}';tenantTab()">${l}</button>`).join('')}</div><div id="ttab"></div></div>`;
+  tenantTab();
+}
+async function tenantTab() {
+  document.querySelectorAll('#app .card .row:first-child button').forEach(b => b.classList.toggle('pri', b.textContent === { info: 'Informations', users: 'Comptes', audit: 'Journal d’activité', status: 'Statut et abonnement' }[CUR.tab]));
+  const e = $('#ttab'), t = CUR.t;
+  if (CUR.tab === 'info') { e.innerHTML = tenantForm(t) + `<p class="mu" style="font-size:12px">Identifiant interne (tenantId) : <code>${esc(t.id)}</code>${t.legacy ? ' · établissement d’origine (données reprises lors du passage en plateforme)' : ''} · créé le ${dt(t.createdAt)} par ${esc(t.createdBy || '—')}</p><div class="err" id="ferr"></div><div class="row"><button class="pri" onclick="tenantSave()">Enregistrer</button></div>`; return; }
+  if (CUR.tab === 'status') {
+    e.innerHTML = `<p>Statut actuel : ${pill(t)}</p><div class="row"><button ${t.status === 'active' ? 'disabled' : ''} onclick="statusDlg('active')">Activer</button><button ${t.status === 'suspended' ? 'disabled' : ''} onclick="statusDlg('suspended')">Suspendre</button><button class="dng" ${t.status === 'disabled' ? 'disabled' : ''} onclick="statusDlg('disabled')">Désactiver</button></div><p class="mu" style="font-size:12px">Suspendre ou désactiver ferme immédiatement les sessions et les liens de déclaration de l’établissement. Aucune donnée n’est supprimée.</p>
+    <h3>Historique des statuts</h3><div class="tw"><table><tr><th>Date</th><th>Par</th><th>Changement</th><th>Motif</th></tr>${(t.statusHistory || []).slice().reverse().map(h => `<tr><td>${dt(h.at)}</td><td>${esc(h.by)}</td><td>${esc(STATUSES[h.from] || h.from)} → ${esc(STATUSES[h.to] || h.to)}</td><td>${esc(h.reason)}</td></tr>`).join('') || '<tr><td colspan="4" class="mu">Aucun changement.</td></tr>'}</table></div>`; return;
+  }
+  if (CUR.tab === 'users') {
+    e.innerHTML = 'Chargement…';
+    let r; try { r = await api('GET', '/api/platform/tenants/' + t.id + '/users'); } catch (x) { e.innerHTML = `<p class="err">${esc(x.message)}</p>`; return; }
+    CUR.users = r.items; const now = Date.now();
+    e.innerHTML = `<div class="row" style="margin-bottom:8px"><span class="mu" style="flex:1">Comptes gérés par l’administrateur de l’établissement. Vos actions ici sont inscrites dans son journal.</span><button class="pri" onclick="userDlg()">+ Compte</button></div><div class="tw"><table><tr><th>Identifiant</th><th>Nom</th><th>Poste</th><th>Rôle</th><th>État</th><th>Dernière connexion</th><th></th></tr>${r.items.map(u => `<tr><td>${esc(u.username)}</td><td>${esc(u.displayName)}${u.email ? '<br><span class="mu" style="font-size:11px">' + esc(u.email) + '</span>' : ''}</td><td>${esc(u.jobTitle)}</td><td>${esc((ROLES.roles[u.role] || {}).label || u.role)}</td><td>${u.disabled ? '<span style="color:var(--bad)">désactivé</span>' : u.lockedUntil && Date.parse(u.lockedUntil) > now ? '<span style="color:var(--warn)">verrouillé</span>' : u.mustChange ? 'mot de passe à changer' : 'actif'}</td><td>${dt(u.lastLoginAt)}</td><td style="white-space:nowrap"><button onclick="activity('${u.id}')">Historique</button> <button onclick="resetDlg('${u.id}')">Mot de passe</button> <button class="${u.disabled ? '' : 'dng'}" onclick="userToggle('${u.id}',${!u.disabled})">${u.disabled ? 'Réactiver' : 'Désactiver'}</button></td></tr>`).join('')}</table></div>`; return;
+  }
+  if (CUR.tab === 'audit') return auditPanel(e, '/api/platform/tenants/' + t.id + '/audit', true);
+}
+async function tenantSave() { try { const r = await api('PUT', '/api/platform/tenants/' + CUR.id, tenantBody()); CUR.t = r.tenant; toast('Établissement enregistré'); tenantView(); } catch (e) { $('#ferr').textContent = e.message; } }
+function statusDlg(st) {
+  modal(`<h2>${{ active: 'Activer', suspended: 'Suspendre', disabled: 'Désactiver' }[st]} « ${esc(CUR.t.name)} »</h2>${st !== 'active' ? '<div class="warnbox">Les utilisateurs de cet établissement seront déconnectés immédiatement et ne pourront plus se connecter. Les données restent intactes.</div>' : ''}<label>Motif (obligatoire, inscrit au journal)</label><input id="s_r"><div class="err" id="ferr"></div><div class="row" style="margin-top:10px"><button class="${st === 'active' ? 'pri' : 'dng'}" onclick="statusDo('${st}')">Confirmer</button><button onclick="closeModal()">Annuler</button></div>`);
+}
+async function statusDo(st) { try { const r = await api('POST', '/api/platform/tenants/' + CUR.id + '/status', { status: st, reason: $('#s_r').value }); CUR.t = r.tenant; closeModal(); toast('Statut modifié'); CUR.tab = 'status'; tenantView(); } catch (e) { $('#ferr').textContent = e.message; } }
+function enterDlg(mode) {
+  const iv = mode === 'intervene';
+  modal(`<h2>${iv ? 'Intervenir dans' : 'Consulter'} l’espace de « ${esc(CUR.t.name)} »</h2><p class="mu">${iv ? 'Mode intervention : vous pourrez modifier les données de l’établissement. Chaque action est inscrite à votre nom dans son journal et dans celui de la plateforme.' : 'Mode consultation : lecture seule. Votre entrée et les données consultées sont inscrites dans le journal de l’établissement.'} Session limitée dans le temps.</p><label>Motif ${iv ? '(obligatoire)' : '(recommandé)'}</label><input id="e_r" placeholder="${iv ? 'ex. correction demandée par la direction, ticket n°…' : 'ex. contrôle qualité'}"><div class="err" id="ferr"></div><div class="row" style="margin-top:10px"><button class="${iv ? 'dng' : 'pri'}" onclick="enterDo('${mode}')">Entrer</button><button onclick="closeModal()">Annuler</button></div>`);
+}
+async function enterDo(mode) { try { const r = await api('POST', '/api/platform/tenants/' + CUR.id + '/enter', { mode, reason: $('#e_r').value }); location.href = r.url || '/'; } catch (e) { $('#ferr').textContent = e.message; } }
+function userDlg() {
+  const R = ROLES.roles;
+  modal(`<h2>Nouveau compte dans « ${esc(CUR.t.name)} »</h2><div class="row"><div style="flex:1"><label>Identifiant</label><input id="u_u" autocapitalize="none"></div><div style="flex:1"><label>Nom complet</label><input id="u_n"></div></div><div class="row"><div style="flex:1"><label>Poste</label><input id="u_j"></div><div style="flex:1"><label>E-mail</label><input id="u_e"></div></div><label>Rôle</label><select id="u_r">${Object.entries(R).filter(([k]) => k !== 'teacher').map(([k, r]) => `<option value="${k}">${esc(r.label)}</option>`).join('')}</select><label>Mot de passe temporaire</label><div class="row"><input id="u_p" style="flex:1" value="${genPw()}"><button onclick="$('#u_p').value=genPw()">↻</button></div><p class="mu" style="font-size:12px">Les comptes enseignants (reliés à une fiche enseignant) se créent depuis l’espace de l’établissement.</p><div class="err" id="ferr"></div><div class="row" style="margin-top:10px"><button class="pri" onclick="userCreate()">Créer</button><button onclick="closeModal()">Annuler</button></div>`);
+}
+async function userCreate() { try { await api('POST', '/api/platform/tenants/' + CUR.id + '/users', { username: $('#u_u').value.trim().toLowerCase(), displayName: $('#u_n').value, jobTitle: $('#u_j').value, email: $('#u_e').value, role: $('#u_r').value, password: $('#u_p').value }); closeModal(); toast('Compte créé — mot de passe temporaire : ' + $('#u_p').value); tenantTab(); } catch (e) { $('#ferr').textContent = e.message; } }
+function resetDlg(id) { const u = CUR.users.find(x => x.id === id); modal(`<h2>Réinitialiser le mot de passe de ${esc(u.username)}</h2><label>Mot de passe temporaire</label><div class="row"><input id="r_p" style="flex:1" value="${genPw()}"><button onclick="$('#r_p').value=genPw()">↻</button></div><div class="err" id="ferr"></div><div class="row" style="margin-top:10px"><button class="pri" onclick="resetDo('${id}')">Réinitialiser</button><button onclick="closeModal()">Annuler</button></div>`); }
+async function resetDo(id) { try { await api('POST', '/api/platform/tenants/' + CUR.id + '/users/' + id + '/reset-password', { password: $('#r_p').value }); closeModal(); toast('Mot de passe réinitialisé'); tenantTab(); } catch (e) { $('#ferr').textContent = e.message; } }
+async function userToggle(id, dis) { const u = CUR.users.find(x => x.id === id); const why = prompt((dis ? 'Désactiver ' : 'Réactiver ') + u.username + ' — motif :'); if (why === null) return; try { await api('PUT', '/api/platform/tenants/' + CUR.id + '/users/' + id, { disabled: dis, reason: why }); toast(dis ? 'Compte désactivé' : 'Compte réactivé'); tenantTab(); } catch (e) { toast(e.message, true); } }
+async function activity(uid) {
+  modal('<p>Chargement…</p>');
+  try { const r = await api('GET', '/api/platform/tenants/' + CUR.id + '/users/' + uid + '/activity?limit=2000'); CUR.act = r.items;
+    $('#mbox').style.width = 'min(980px,100%)';
+    $('#mbox').innerHTML = `<div class="row"><h2 style="margin:0;flex:1">Historique de ${esc(r.user.displayName)} (${esc(r.user.username)})</h2><button onclick="$('#mbox').style.width='';closeModal()">Fermer</button></div><p class="mu">${r.total} action(s), dans l’ordre chronologique · ${esc(CUR.t.name)}</p>${auditTable(r.items)}`;
+  } catch (e) { $('#mbox').innerHTML = `<p class="err">${esc(e.message)}</p>`; }
+}
+/* ---------- journaux ---------- */
+const SECTIONS = ['authentification', 'comptes', 'étudiants', 'emploi du temps', 'enseignants', 'groupes', 'filières', 'volumes horaires', 'absences', 'liens de déclaration', 'documents', 'paramètres', 'établissement', 'système', 'règles de modification', 'consultation Super Admin', 'plateforme'];
+const v2 = v => v === undefined || v === null ? '∅' : typeof v === 'string' ? v : JSON.stringify(v);
+function detail(x) {
+  const parts = [];
+  if (x.avant && x.apres) parts.push(Object.keys(Object.assign({}, x.avant, x.apres)).filter(k => JSON.stringify(x.avant[k]) !== JSON.stringify(x.apres[k])).map(k => `<div>${esc(k)} : <span style="color:var(--bad)">${esc(v2(x.avant[k]))}</span> → <span style="color:var(--ok)">${esc(v2(x.apres[k]))}</span></div>`).join(''));
+  if (x.modifications) parts.push(x.modifications.map(c => `<div><b>${esc(c.op)}</b> ${esc(c.collection)} « ${esc(c.label)} » <span class="mu">(${esc(c.id)})</span>${c.champs ? Object.entries(c.champs).map(([f, v]) => `<div style="margin-left:12px">${esc(f)} : <span style="color:var(--bad)">${esc(v2(v.ancien))}</span> → <span style="color:var(--ok)">${esc(v2(v.nouveau))}</span></div>`).join('') : ''}${c.nouveau ? `<div style="margin-left:12px" class="mu">valeurs : ${esc(JSON.stringify(c.nouveau)).slice(0, 400)}</div>` : ''}${c.ancien ? `<div style="margin-left:12px" class="mu">valeurs supprimées : ${esc(JSON.stringify(c.ancien)).slice(0, 400)}</div>` : ''}</div>`).join('') + (x.nbModifications > x.modifications.length ? `<div class="mu">… et ${x.nbModifications - x.modifications.length} autre(s)</div>` : ''));
+  const rest = Object.fromEntries(Object.entries(x).filter(([k]) => !['at', 'event', 'section', 'result', 'ip', 'user', 'userId', 'role', 'prev', 'h', 'avant', 'apres', 'modifications', 'tenantId', 'superAdmin', 'superAdminMode'].includes(k)));
+  if (Object.keys(rest).length) parts.push(`<div class="mu" style="font-size:12px">${esc(JSON.stringify(rest))}</div>`);
+  parts.push(`<div class="mu" style="font-size:11px">empreinte ${esc((x.h || '').slice(0, 16))}… · précédente ${esc((x.prev || '').slice(0, 16))}…</div>`);
+  return parts.join('');
+}
+function auditTable(items, showTenant) {
+  return `<div class="tw" style="max-height:60vh"><table><tr><th>Date</th><th>Utilisateur</th>${showTenant ? '<th>Établissement</th>' : ''}<th>Rubrique</th><th>Action</th><th>Élément</th><th>Résultat</th><th>IP</th></tr>${items.map(x => `<tr><td style="white-space:nowrap">${esc((x.at || '').slice(0, 19).replace('T', ' '))}</td><td>${esc(x.user || '—')}${x.superAdmin ? ' <span style="color:var(--bad);font-size:11px">SA</span>' : ''}<br><span class="mu" style="font-size:11px">${esc(x.role || '')}</span></td>${showTenant ? `<td>${esc((TEN.find(t => t.id === x.tenantId) || {}).name || x.etablissement || '')}</td>` : ''}<td class="mu" style="font-size:12px">${esc(x.section || '')}</td><td><details><summary>${esc(x.event)}${x.motif ? ' <span class="mu">— motif : ' + esc(x.motif) + '</span>' : ''}</summary><div style="font-size:12px;margin-top:4px">${detail(x)}</div></details></td><td style="font-size:12px">${esc(x.compte || x.recordId || x.sessionId || x.formId || (x.modifications && x.modifications.length === 1 ? x.modifications[0].label : x.collections || ''))}</td><td style="font-size:12px;color:${!x.result || x.result === 'succès' ? 'inherit' : 'var(--bad)'}">${esc(x.result || '')}</td><td style="font-size:12px">${esc(x.ip || '')}</td></tr>`).join('') || '<tr><td colspan="8" class="mu">Aucune entrée pour ces filtres.</td></tr>'}</table></div>`;
+}
+async function auditPanel(e, url, users) {
+  const F = auditPanel.f = auditPanel.f && auditPanel.url === url ? auditPanel.f : {}; auditPanel.url = url;
+  e.innerHTML = `<div class="row" style="margin-bottom:8px">${users ? `<select id="f_user"><option value="">Tous les utilisateurs</option>${(CUR.users || []).map(u => `<option value="${esc(u.username)}" ${F.user === u.username ? 'selected' : ''}>${esc(u.displayName)} (${esc(u.username)})</option>`).join('')}</select>` : '<input id="f_user" placeholder="Utilisateur" style="width:150px">'}<select id="f_section"><option value="">Toutes les rubriques</option>${SECTIONS.map(s => `<option ${F.section === s ? 'selected' : ''}>${s}</option>`).join('')}</select><input id="f_event" placeholder="Type d’action" style="width:170px" value="${esc(F.event || '')}"><input id="f_record" placeholder="Élément concerné" style="width:160px" value="${esc(F.record || '')}"><select id="f_result"><option value="">Tous résultats</option>${['succès', 'refusé', 'échec'].map(s => `<option ${F.result === s ? 'selected' : ''}>${s}</option>`).join('')}</select><input id="f_from" type="date" value="${esc(F.from || '')}" title="du"><input id="f_to" type="date" value="${esc(F.to || '')}" title="au"><select id="f_order"><option value="desc">Plus récent d’abord</option><option value="asc" ${F.order === 'asc' ? 'selected' : ''}>Chronologique</option></select><button class="pri" id="f_go">Filtrer</button><button id="f_ver">Vérifier l’intégrité</button></div><div id="f_out" class="mu">Chargement…</div>`;
+  if (users && !CUR.users) { try { CUR.users = (await api('GET', '/api/platform/tenants/' + CUR.id + '/users')).items; return auditPanel(e, url, users); } catch (x) { } }
+  const run = async verify => {
+    for (const k of ['user', 'section', 'event', 'record', 'result', 'from', 'to', 'order']) F[k] = ($('#f_' + k).value || '').trim();
+    const q = Object.entries(F).filter(([, v]) => v).map(([k, v]) => k + '=' + encodeURIComponent(v)).join('&');
+    $('#f_out').innerHTML = 'Chargement…';
+    try { const r = await api('GET', url + '?limit=500&' + q + (verify ? '&verify=1' : '')); $('#f_out').classList.remove('mu'); $('#f_out').innerHTML = (r.valid !== undefined ? (r.valid ? '<p style="color:var(--ok)">Chaîne d’intégrité du journal valide ✔ (aucune entrée modifiée ni supprimée)</p>' : '<p style="color:var(--bad)"><b>Chaîne d’intégrité ROMPUE ✖ : le journal a été altéré en dehors de l’application.</b></p>') : '') + `<p class="mu">${r.total} entrée(s)${r.total > r.items.length ? ' — ' + r.items.length + ' affichées, affinez les filtres' : ''}</p>` + auditTable(r.items, !users); }
+    catch (x) { $('#f_out').innerHTML = `<p class="err">${esc(x.message)}</p>`; }
+  };
+  $('#f_go').onclick = () => run(false); $('#f_ver').onclick = () => run(true); run(false);
+}
+async function pAuditView() {
+  if (!TEN.length) { try { TEN = (await api('GET', '/api/platform/tenants')).items; } catch (e) { } }
+  $('#app').innerHTML = `<div class="card"><h2>Journal de la plateforme</h2><p class="mu" style="font-size:13px">Actions du Super Admin et événements de la plateforme (créations, statuts, entrées dans les espaces, consultations de journaux). En ajout seul, chaîné : aucune entrée ne peut être modifiée ni supprimée.</p><div id="pa"></div></div>`;
+  auditPanel($('#pa'), '/api/platform/audit', false);
+}
+/* ---------- paramètres et compte ---------- */
+async function settingsView() {
+  let r; try { r = await api('GET', '/api/platform/settings'); SETTINGS = r.settings; if (!TEN.length) TEN = (await api('GET', '/api/platform/tenants')).items; } catch (e) { $('#app').innerHTML = `<div class="card err">${esc(e.message)}</div>`; return; }
+  const s = SETTINGS;
+  $('#app').innerHTML = `<div class="card" style="max-width:640px"><h2>Paramètres de la plateforme</h2><label>Nom de la plateforme</label><input id="g_n" value="${esc(s.platformName)}">
+  <label>Établissement par défaut (connexion sans code)</label><select id="g_d"><option value="">— aucun : le code est obligatoire —</option>${TEN.map(t => `<option value="${t.id}" ${s.defaultTenantId === t.id ? 'selected' : ''}>${esc(t.name)} (${esc(t.slug)})</option>`).join('')}</select>
+  <label style="display:flex;gap:6px;align-items:center;font-weight:normal;color:var(--tx)"><input type="checkbox" id="g_a" style="width:auto" ${s.allowDefaultLogin ? 'checked' : ''}> Autoriser la connexion sans code vers l’établissement par défaut (compatibilité avec le serveur local)</label>
+  <h3>Sécurité du compte Super Admin</h3><div class="row"><div style="flex:1"><label>Inactivité max. (minutes)</label><input id="g_i" type="number" min="5" max="240" value="${s.superAdminIdleMinutes}"></div><div style="flex:1"><label>Durée max. de session (heures)</label><input id="g_m" type="number" min="1" max="24" value="${s.superAdminMaxHours}"></div><div style="flex:1"><label>Durée max. dans un espace (heures)</label><input id="g_w" type="number" min="1" max="12" value="${s.workspaceMaxHours}"></div></div>
+  <div class="err" id="ferr"></div><div class="row" style="margin-top:10px"><button class="pri" onclick="settingsSave()">Enregistrer</button></div></div>`;
+}
+async function settingsSave() { try { const r = await api('PUT', '/api/platform/settings', { platformName: $('#g_n').value, defaultTenantId: $('#g_d').value, allowDefaultLogin: $('#g_a').checked, superAdminIdleMinutes: +$('#g_i').value, superAdminMaxHours: +$('#g_m').value, workspaceMaxHours: +$('#g_w').value }); SETTINGS = r.settings; $('#pname').textContent = SETTINGS.platformName; toast('Paramètres enregistrés'); } catch (e) { $('#ferr').textContent = e.message; } }
+async function accountView() {
+  const m = await api('GET', '/api/platform/me').catch(() => null); if (m && m.admin) ME = m.admin;
+  $('#app').innerHTML = `<div class="card" style="max-width:640px"><h2>Mon compte Super Admin</h2><p><b>${esc(ME.displayName)}</b> (${esc(ME.username)}) · dernière connexion ${dt(ME.lastLoginAt)}</p><div class="row"><button onclick="pwView(false)">Changer mon mot de passe</button></div>
+  <h3>Double authentification</h3>${ME.totp ? '<p style="color:var(--ok)">Activée ✔ — un code à 6 chiffres est demandé à chaque connexion.</p><div class="row"><button class="dng" onclick="totpOff()">Désactiver…</button></div>' : `<div class="warnbox">Non activée. Elle est fortement recommandée : sans elle, un mot de passe volé suffit pour accéder à toute la plateforme.</div><div class="row" style="margin-top:8px"><button class="pri" onclick="totpSetup()">Activer la double authentification</button></div>`}<div id="totp"></div></div>`;
+}
+async function totpSetup() {
+  try { const r = await api('POST', '/api/platform/totp/setup', {}); $('#totp').innerHTML = `<ol style="font-size:13px"><li>Dans une application d’authentification (Google Authenticator, Microsoft Authenticator, 2FAS, Aegis…), ajoutez un compte <b>avec une clé de configuration</b> (saisie manuelle).</li><li>Clé : <code style="font-size:15px;letter-spacing:1px">${esc(r.secret.replace(/(.{4})/g, '$1 ').trim())}</code> (type : basé sur le temps)</li><li>Ou copiez ce lien dans un gestionnaire de mots de passe compatible : <code style="font-size:11px">${esc(r.uri)}</code></li><li>Saisissez le code à 6 chiffres affiché :</li></ol><div class="row"><input id="t_c" inputmode="numeric" maxlength="6" style="width:140px"><button class="pri" onclick="totpEnable()">Vérifier et activer</button></div><div class="err" id="ferr"></div>`; }
+  catch (e) { toast(e.message, true); }
+}
+async function totpEnable() { try { await api('POST', '/api/platform/totp/enable', { code: $('#t_c').value.trim() }); toast('Double authentification activée'); accountView(); } catch (e) { $('#ferr').textContent = e.message; } }
+function totpOff() { modal(`<h2>Désactiver la double authentification</h2><label>Mot de passe</label><input id="o_p" type="password"><label>Code actuel</label><input id="o_c" inputmode="numeric" maxlength="6"><div class="err" id="ferr"></div><div class="row" style="margin-top:10px"><button class="dng" onclick="totpOffDo()">Désactiver</button><button onclick="closeModal()">Annuler</button></div>`); }
+async function totpOffDo() { try { await api('POST', '/api/platform/totp/disable', { password: $('#o_p').value, code: $('#o_c').value.trim() }); closeModal(); toast('Double authentification désactivée', true); accountView(); } catch (e) { $('#ferr').textContent = e.message; } }
+init();
+</script>
+</body>
+</html>

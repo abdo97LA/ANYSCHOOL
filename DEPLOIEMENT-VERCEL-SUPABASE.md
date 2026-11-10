@@ -11,6 +11,8 @@ Ce guide met UniTimetable **en ligne**. Vous pourrez alors vous connecter à vos
 
 ---
 
+> **Version 3 (plateforme multi-établissements)** : après une mise à jour, ré-exécutez `supabase/schema.sql` dans Supabase et ajoutez `SUPERADMIN_USERNAME` / `SUPERADMIN_PASSWORD` dans Vercel. Voir **PLATEFORME-MULTI-ETABLISSEMENTS.md**, section 4.
+
 ## 1. Supabase : la base de données (5 minutes)
 
 1. Créez un compte sur https://supabase.com, puis cliquez sur **New project**.

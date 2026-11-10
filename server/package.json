@@ -1,6 +1,6 @@
 {
   "name": "unitimetable-server",
-  "version": "2.1.0",
+  "version": "3.0.0",
   "private": true,
   "description": "Serveur central UniTimetable pour réseau local – UM6SS FM6SIPS Dakhla (aucune dépendance externe)",
   "main": "server.js",
