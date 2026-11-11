@@ -22,7 +22,7 @@ function groupAt(st, date) {
 }
 /* L'historique est géré par le serveur : celui envoyé par un poste est ignoré ; on part de l'historique connu
    et on ajoute une entrée datée du jour quand filière / année / groupe / année universitaire changent. */
-function maintainGroupHistory(prevData, nextData, today) {
+function maintainGroupHistory(prevData, nextData, today, trusted) {   // trusted : historiques conservés par le serveur (restauration depuis la corbeille)
   if (!nextData || !Array.isArray(nextData.students)) return 0;
   const prev = new Map(((prevData && prevData.students) || []).map(s => [s.id, s]));
   let n = 0;
@@ -30,6 +30,7 @@ function maintainGroupHistory(prevData, nextData, today) {
     if (!s || typeof s !== 'object') continue;
     const p = prev.get(s.id), t = tuple(s);
     let h = p && Array.isArray(p.groupHistory) && p.groupHistory.length ? p.groupHistory.map(e => ({ ...e })) : null;
+    if (!h && !p && trusted && Array.isArray(trusted[s.id]) && trusted[s.id].length) h = trusted[s.id].map(e => ({ ...e }));
     if (!h) h = [{ from: '', ...(p ? tuple(p) : t) }];
     const last = h[h.length - 1];
     if (!sameTuple(tuple(last), t)) {

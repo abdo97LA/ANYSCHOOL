@@ -10,7 +10,9 @@ const COLLECTIONS = {
 const PERMS = {
   'users.manage': 'Gérer les comptes et les rôles',
   'users.read': 'Consulter la liste des comptes (sans les modifier)',
-  'institution.manage': 'Modifier les informations de l’établissement',
+  'institution.manage': 'Modifier les informations et l’identité visuelle de l’établissement',
+  'trash.read': 'Consulter la corbeille (éléments supprimés)',
+  'trash.restore': 'Restaurer des éléments supprimés',
   'server.manage': 'Paramètres serveur et sauvegardes',
   'audit.read': 'Consulter le journal d’audit du serveur',
   'state.read': 'Lire toutes les données de l’établissement',
@@ -39,11 +41,11 @@ const ROLES = {
   scolarite: { label: 'Responsable de la scolarité', perms: ['state.read', 'state.write.scolarite', 'absences.read', 'absences.write', 'absences.amend', 'forms.manage', 'policies.manage', 'alerts.read', 'notifs.read', 'sessions.sync'] },
   planning: { label: 'Responsable de l’emploi du temps', perms: ['state.read.planning', 'state.write.planning', 'absences.read.summary', 'alerts.read', 'sessions.sync'] },
   teacher: { label: 'Enseignant', perms: ['state.read.own', 'absences.read.own', 'absences.write.own', 'alerts.read.own'] },
-  direction: { label: 'Direction', perms: ['state.read', 'absences.read', 'alerts.read', 'notifs.read', 'finance.read', 'users.read'] },
+  direction: { label: 'Direction', perms: ['state.read', 'absences.read', 'alerts.read', 'notifs.read', 'finance.read', 'users.read', 'trash.read'] },
   finance: { label: 'Finance', perms: ['state.read.planning', 'finance.read', 'absences.read.summary'] },
   /* Rôles réservés au Super Admin de la plateforme quand il entre dans l'espace d'un établissement.
      Jamais attribuables à un compte d'établissement (refusé par le serveur). */
-  platform_view: { label: 'Super Admin — consultation', perms: ['state.read', 'absences.read', 'alerts.read', 'notifs.read', 'audit.read', 'users.read', 'finance.read'], platform: true },
+  platform_view: { label: 'Super Admin — consultation', perms: ['state.read', 'absences.read', 'alerts.read', 'notifs.read', 'audit.read', 'users.read', 'finance.read', 'trash.read'], platform: true },
   platform_intervene: { label: 'Super Admin — intervention', perms: Object.keys(PERMS), platform: true }
 };
 const assignable = r => !!ROLES[r] && !ROLES[r].platform;

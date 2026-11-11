@@ -19,6 +19,7 @@ const MIG = require('./lib/migrations');
 const AL = require('./lib/auditlog');
 const PF = require('./lib/platform');
 const ROLESX = require('./lib/roles');
+const TR = require('./lib/trash');
 const VERSION = require('./package.json').version;
 const VENDOR = ['pdf.js', 'pdf.worker.js', 'xlsx.full.min.js', 'jspdf.umd.min.js'];
 const vendorMissing = () => VENDOR.filter(f => { try { return fs.statSync(path.join(__dirname, 'public', 'vendor', f)).size < 10000; } catch (e) { return true; } });
@@ -392,17 +393,27 @@ function platformBackup(force) {
 // anti-doublon : opId -> réponse (nouvelle tentative après coupure réseau), par établissement (C.opDone)
 const opPending = [];
 function remember(op, resp) { if (!op) return; if (CLOUD) { opPending.push([C, op, resp]); return; } C.opDone.set(op, resp); if (C.opDone.size > 500) C.opDone.delete(C.opDone.keys().next().value); }
+const shortVals = o => Object.fromEntries(Object.entries(o || {}).map(([k, v]) => { const t = typeof v === 'string' ? v : JSON.stringify(v); return [k, t && t.length > 300 ? '[contenu volumineux : ' + t.length + ' caractères]' : v]; }));
 function commitState(data, req, info) {
   const prev = state.data;
   const prot = MD.enforceAppendOnly(prev, data);            // journaux de l'interface : ajout seul
-  MD.maintainGroupHistory(prev, data, MD.casaDate(nowMs()));  // historique des groupes géré par le serveur
+  MD.maintainGroupHistory(prev, data, MD.casaDate(nowMs()), info && info.trustedHistory);  // historique des groupes géré par le serveur
+  if (info) delete info.trustedHistory;
   const diff = MD.diffForAudit(prev, data, 100);
   if (Object.keys(prot).length) audit('journal protégé : suppression ou modification d’entrées ignorée', req, { journaux: prot });
   info = { ...info, nbModifications: diff.total, modifications: diff.changes };
   const rev = state.rev + 1;
+  const dels = TR.deletedBetween(prev, data), delReason = info.deleteReason || ''; delete info.deleteReason;
   state = { rev, at: new Date().toISOString(), by: req.user.username, data };
   sync(); persistState(); saveHistory(rev, data);
-  audit('données centrales enregistrées', req, { rev, ...info });
+  audit('données centrales enregistrées', req, { rev, ...info, ...(dels.length ? { suppressionsLogiques: dels.length } : {}) });
+  /* suppression logique : rien n'est perdu, chaque élément retiré part dans la corbeille de l'établissement */
+  if (dels.length) {
+    const entries = TR.makeEntries(dels, { at: new Date(nowMs()).toISOString(), by: req.user.username, byId: req.user.id, byName: req.user.displayName, reason: delReason, rev }, prev);
+    (store.trash = store.trash || []).push(...entries);
+    if (entries.length <= 30) for (const e of entries) audit('suppression logique', req, { section: TR.SECTION[e.collection], collection: e.collection, record: e.label, recordId: e.recordId, corbeille: e.id, motif: delReason || undefined, ancien: shortVals(e.data), rev });
+    else audit('suppression logique (lot de ' + entries.length + ' éléments)', req, { section: 'plusieurs : ' + [...new Set(entries.map(e => TR.SECTION[e.collection]))].join(', '), elements: entries.map(e => ({ collection: e.collection, recordId: e.recordId, record: e.label, corbeille: e.id })), motif: delReason || undefined, rev });
+  }
   refreshDerived(); runAlerts();
   persist();
   return rev;
@@ -549,7 +560,7 @@ async function tenantRoute(req, res, u) {
     if (sess) { delete store.logins[sess.hash]; audit(req.user.superAdmin ? 'sortie de l’espace de l’établissement (Super Admin)' : 'déconnexion', req); persist(); }
     return json(res, 200, { ok: true }, { 'Set-Cookie': 'sid=; HttpOnly; SameSite=Strict; Path=/; Max-Age=0' });
   }
-  if (M === 'GET' && p === '/api/me') return json(res, 200, { auth: !!req.user, user: req.user ? meOf(req.user) : null, setupRequired: !store.users.length, tenant: tenantInfo(T), server: { version: VERSION, https: cfg.TLS } });
+  if (M === 'GET' && p === '/api/me') return json(res, 200, { auth: !!req.user, user: req.user ? meOf(req.user) : null, setupRequired: !store.users.length, tenant: tenantInfo(T), prefs: store.prefs || {}, server: { version: VERSION, https: cfg.TLS } });
 
   /* ---- API protégée ---- */
   if (!req.user) return fail(res, 401, 'Authentification requise');
@@ -582,7 +593,9 @@ async function tenantRoute(req, res, u) {
     if (M === 'DELETE') {
       if (!cur) return fail(res, 404, 'Rôle introuvable');
       const users = store.users.filter(x => x.role === key && !x.disabled); if (users.length) return fail(res, 409, 'Rôle encore attribué à ' + users.length + ' compte(s) actif(s) : changez d’abord leur rôle.');
-      delete store.customRoles[key]; ROLESX.setCustomRoles(store.customRoles); audit('rôle personnalisé supprimé', req, { role: key, recordId: key, avant: cur }); persist(); return json(res, 200, { ok: true });
+      const now = new Date(nowMs()).toISOString(), te = { id: rid(8), collection: 'customRoles', type: 'Rôle personnalisé', recordId: key, label: cur.label, data: { key, def: cur }, status: 'deleted', deletedAt: now, deletedBy: req.user.username, deletedById: req.user.id, deletedByName: req.user.displayName, reason: str(u.searchParams.get('reason') || '', 300), history: [{ at: now, action: 'suppression', by: req.user.username }] };
+      (store.trash = store.trash || []).push(te);
+      delete store.customRoles[key]; ROLESX.setCustomRoles(store.customRoles); audit('suppression logique', req, { section: 'comptes', collection: 'customRoles', record: cur.label, recordId: key, corbeille: te.id, avant: cur }); persist(); return json(res, 200, { ok: true });
     }
     let b; try { b = await body(req, 8192); } catch (e) { return fail(res, e.code || 400, e.msg); }
     const label = str(b.label, 60), perms = Array.isArray(b.perms) ? [...new Set(b.perms)] : null;
@@ -610,6 +623,16 @@ async function tenantRoute(req, res, u) {
       return json(res, 200, { ok: true, tenant: PF.publicTenant(T) });
     }
   }
+  /* ---- corbeille (suppression logique) et préférences de l'établissement ---- */
+  if (p === '/api/prefs' && M === 'PUT') {
+    if (!need(req, res, 'institution.manage')) return;
+    let b; try { b = await body(req, 2048); } catch (e) { return fail(res, e.code || 400, e.msg); }
+    const before = { ...(store.prefs || {}) }; store.prefs = { ...(store.prefs || {}) };
+    if (b.requireDeleteReason !== undefined) store.prefs.requireDeleteReason = !!b.requireDeleteReason;
+    audit('préférences de l’établissement modifiées', req, { section: 'paramètres', avant: before, apres: store.prefs }); persist();
+    return json(res, 200, { ok: true, prefs: store.prefs });
+  }
+  if (p === '/api/trash' || p.startsWith('/api/trash/')) return trashApi(req, res, p, M, u);
   /* Super Admin en consultation : les accès aux données sont inscrits au journal de l'établissement */
   if (req.user.superAdmin && M === 'GET' && (/^\/api\/(users|absences|audit|alerts|policies|forms)$/.test(p) || /^\/api\/sessions\//.test(p) || (p === '/api/state' && !(u.searchParams.get('since') !== null && +u.searchParams.get('since') === state.rev)))) { audit('consultation (Super Admin)', req, { chemin: p, section: 'consultation Super Admin' }); persist(); }
 
@@ -642,10 +665,13 @@ async function tenantRoute(req, res, u) {
       // si le serveur a complété ou protégé des données (historique des groupes, journaux), le poste reçoit la version finale
       const reply = (rev, merged, data) => { const changed = data && ST.stable(data) !== mineStr; return { ok: true, rev, merged: !!(merged || changed), ...((merged || changed) ? { data: ST.viewFor(req.user, data, can) } : {}) }; };
       const baseRev = Number.isInteger(b.baseRev) ? b.baseRev : -1;
+      const deleteReason = str(b.deleteReason, 300);
+      /* motif de suppression obligatoire (réglage de l'établissement) : vérifié avant tout enregistrement */
+      const needReason = next => { if (!(store.prefs && store.prefs.requireDeleteReason) || deleteReason.length >= 3) return null; const d = TR.deletedBetween(state.data, next); return d.length ? d : null; };
       if (b.force === true) {
         if (!can_(req, 'state.force')) return fail(res, 403, 'Seul l’administrateur peut remplacer toutes les données');
         try { await makeBackup('avant-remplacement'); } catch (e) { return fail(res, 500, 'Sauvegarde préalable impossible : remplacement annulé'); }
-        const rev = commitState(mine, req, { mode: 'remplacement complet', motif: str(b.reason, 200) });
+        const rev = commitState(mine, req, { mode: 'remplacement complet', motif: str(b.reason, 200), deleteReason: deleteReason || str(b.reason, 200) });
         const r = reply(rev, false, state.data); remember(op, r); return json(res, 200, r);
       }
       if (!state.data) {
@@ -660,7 +686,8 @@ async function tenantRoute(req, res, u) {
       if (baseRev === state.rev) {
         const merged = ST.merge3(base, mine, state.data, W, false).data;   // garde les collections non modifiables intactes
         const ks = ST.changedKeys(state.data, merged); if (!ks.length) { const r = { ok: true, rev: state.rev, merged: false, unchanged: true }; remember(op, r); return json(res, 200, r); }
-        const rev = commitState(merged, req, { collections: ks.join(',') }); const r = reply(rev, false, state.data); remember(op, r); return json(res, 200, r);
+        const nr = needReason(merged); if (nr) return fail(res, 400, 'Indiquez le motif de la suppression (obligatoire dans cet établissement).', { needDeleteReason: true, deletions: nr.slice(0, 50).map(d => ({ collection: d.collection, label: TR.label(d.collection, d.record, state.data) })) });
+        const rev = commitState(merged, req, { collections: ks.join(','), deleteReason }); const r = reply(rev, false, state.data); remember(op, r); return json(res, 200, r);
       }
       const preferMine = b.resolve === 'mine';
       const { data, conflicts } = ST.merge3(base, mine, state.data, W, preferMine);
@@ -668,7 +695,8 @@ async function tenantRoute(req, res, u) {
       if (conflicts.length) { try { await makeBackup('avant-resolution-conflit'); } catch (e) { return fail(res, 500, 'Sauvegarde préalable impossible : résolution annulée'); } }
       const ks = ST.changedKeys(state.data, data);
       if (!ks.length) { const r = { ok: true, rev: state.rev, merged: true, data: curView }; remember(op, r); return json(res, 200, r); }
-      const rev = commitState(data, req, { collections: ks.join(','), fusion: 'depuis rév. ' + baseRev, conflitsResolus: conflicts.length ? conflicts.map(c => c.collection + ':' + (c.label || c.id)).slice(0, 20).join('; ') : undefined });
+      const nr = needReason(data); if (nr) return fail(res, 400, 'Indiquez le motif de la suppression (obligatoire dans cet établissement).', { needDeleteReason: true, deletions: nr.slice(0, 50).map(d => ({ collection: d.collection, label: TR.label(d.collection, d.record, state.data) })) });
+      const rev = commitState(data, req, { deleteReason, collections: ks.join(','), fusion: 'depuis rév. ' + baseRev, conflitsResolus: conflicts.length ? conflicts.map(c => c.collection + ':' + (c.label || c.id)).slice(0, 20).join('; ') : undefined });
       const r = reply(rev, true, state.data); remember(op, r); return json(res, 200, r);
     }
     return fail(res, 405, 'Méthode non autorisée');
@@ -800,6 +828,46 @@ async function tenantRoute(req, res, u) {
   }
   return fail(res, 404, 'Introuvable');
 }
+/* Corbeille : consultation (trash.read) et restauration (trash.restore + droit d'écrire la collection) */
+async function trashApi(req, res, p, M, u) {
+  const T = store.trash || (store.trash = []);
+  const canSee = e => can_(req, 'trash.read') || (e.collection === 'customRoles' ? can_(req, 'users.manage') : isWritable(writable(req.user), e.collection));
+  if (M === 'GET' && p === '/api/trash') {
+    if (!can_(req, 'trash.read') && !writable(req.user).size) return fail(res, 403, 'Action non autorisée pour votre rôle');
+    const list = TR.filter(T.filter(canSee), u.searchParams);
+    return json(res, 200, { items: list.slice(0, 1000).map(TR.summary), total: list.length, types: { ...TR.SOFT, customRoles: 'Rôle personnalisé' }, canRestore: can_(req, 'trash.restore'), prefs: store.prefs || {} });
+  }
+  const m = /^\/api\/trash\/([a-f0-9]{16})(\/restore|\/check)?$/.exec(p); if (!m) return fail(res, 404, 'Introuvable');
+  const e = T.find(x => x.id === m[1]); if (!e || !canSee(e)) return fail(res, 404, 'Élément introuvable dans la corbeille');
+  if (M === 'GET' && !m[2]) return json(res, 200, { entry: { ...TR.summary(e), data: shortVals(e.data) } });
+  if (M === 'GET' && m[2] === '/check') return json(res, 200, { conflicts: e.status === 'deleted' && state.data && e.collection !== 'customRoles' ? TR.restoreConflicts(e, state.data, T) : [] });
+  if (M === 'POST' && m[2] === '/restore') {
+    const isRole = e.collection === 'customRoles';
+    if (!can_(req, 'trash.restore') || !(isRole ? can_(req, 'users.manage') : isWritable(writable(req.user), e.collection))) { audit('restauration refusée (droits)', req, { section: TR.SECTION[e.collection], record: e.label, recordId: e.recordId, corbeille: e.id }); persist(); return fail(res, 403, 'Vous n’êtes pas autorisé à restaurer cet élément.'); }
+    let b; try { b = await body(req, 4096); } catch (x) { return fail(res, x.code || 400, x.msg); }
+    if (e.status !== 'deleted') return fail(res, 409, 'Cet élément a déjà été restauré (' + (e.restoredAt || '').slice(0, 16).replace('T', ' ') + ', ' + (e.restoredBy || '') + ').');
+    const reason = str(b.reason, 300);
+    if (isRole) {
+      if (store.customRoles[e.recordId]) return fail(res, 409, 'Restauration impossible tant que ces conflits ne sont pas résolus.', { conflicts: [{ type: 'doublon', message: 'Un rôle actif utilise déjà la clé ' + e.recordId + '.' }] });
+      const now = new Date(nowMs()).toISOString(); store.customRoles[e.recordId] = e.data.def; ROLESX.setCustomRoles(store.customRoles);
+      e.status = 'restored'; e.restoredAt = now; e.restoredBy = req.user.username; e.restoreReason = reason; e.history.push({ at: now, action: 'restauration', by: req.user.username, reason });
+      audit('restauration', req, { section: 'comptes', collection: 'customRoles', record: e.label, recordId: e.recordId, corbeille: e.id, motif: reason || undefined, supprimeLe: e.deletedAt, supprimePar: e.deletedBy }); persist();
+      return json(res, 200, { ok: true, entry: TR.summary(e) });
+    }
+    if (!state.data) return fail(res, 409, 'Aucune donnée centrale : restauration impossible.');
+    const conflicts = TR.restoreConflicts(e, state.data, T);
+    if (conflicts.length) { audit('restauration refusée (conflit)', req, { section: TR.SECTION[e.collection], record: e.label, recordId: e.recordId, corbeille: e.id, conflits: conflicts.map(c => c.message) }); persist(); return fail(res, 409, 'Restauration impossible tant que ces conflits ne sont pas résolus.', { conflicts }); }
+    const data = JSON.parse(JSON.stringify(state.data));
+    data[e.collection] = (Array.isArray(data[e.collection]) ? data[e.collection] : []).concat([JSON.parse(JSON.stringify(e.data))]);
+    const now = new Date(nowMs()).toISOString();
+    const rev = commitState(data, req, { mode: 'restauration depuis la corbeille', collections: e.collection, trustedHistory: e.collection === 'students' ? { [e.recordId]: e.data.groupHistory } : undefined });
+    e.status = 'restored'; e.restoredAt = now; e.restoredBy = req.user.username; e.restoreReason = reason; (e.history = e.history || []).push({ at: now, action: 'restauration', by: req.user.username, reason, rev });
+    audit('restauration', req, { section: TR.SECTION[e.collection], collection: e.collection, record: e.label, recordId: e.recordId, corbeille: e.id, motif: reason || undefined, supprimeLe: e.deletedAt, supprimePar: e.deletedBy, rev });
+    persist();
+    return json(res, 200, { ok: true, rev, entry: TR.summary(e) });
+  }
+  return fail(res, 405, 'Méthode non autorisée');
+}
 async function usersApi(req, res, p, M) {
   let m;
   {
@@ -882,7 +950,7 @@ const saActor = (req, a) => ({ id: 'sa:' + a.id, username: 'superadmin.' + a.use
 async function withTenant(t, fn) { const prev = C; bind(await ctxOf(t)); try { return await fn(C); } finally { sync(); if (prev) bind(prev); else C = null; } }
 function tenantStats(ctx) {
   const d = ctx.state.data || {}, us = ctx.store.users || [];
-  return { users: us.length, activeUsers: us.filter(x => !x.disabled).length, admins: us.filter(x => x.role === 'admin' && !x.disabled).length, students: (d.students || []).length, teachers: (d.teachers || []).length, sessions: (d.sessions || []).length, absences: (ctx.store.absences || []).length, stateRev: ctx.state.rev || 0, lastChangeAt: ctx.state.at || '', lastChangeBy: ctx.state.by || '', activeSessions: Object.keys(ctx.store.logins || {}).length, lastLoginAt: us.map(x => x.lastLoginAt || '').sort().pop() || '' };
+  return { users: us.length, activeUsers: us.filter(x => !x.disabled).length, admins: us.filter(x => x.role === 'admin' && !x.disabled).length, students: (d.students || []).length, teachers: (d.teachers || []).length, sessions: (d.sessions || []).length, absences: (ctx.store.absences || []).length, stateRev: ctx.state.rev || 0, lastChangeAt: ctx.state.at || '', lastChangeBy: ctx.state.by || '', activeSessions: Object.keys(ctx.store.logins || {}).length, trash: (ctx.store.trash || []).filter(e => e.status === 'deleted').length, lastLoginAt: us.map(x => x.lastLoginAt || '').sort().pop() || '' };
 }
 const emptyData = name => ({ teachers: [], rooms: [], levels: [], subjects: [], programs: [], sessions: [], volumes: [], cal: { start: '', end: '' }, students: [], templates: [], tplCats: [], notCommon: [], audit: [], cfg: { etab: name || '' } });
 
@@ -966,6 +1034,17 @@ async function platformRoute(req, res, u) {
   if (M === 'GET' && p === '/api/platform/audit') { const q = AL.cleanFilter(u.searchParams); const r = await auditRead(null, q, true); return json(res, 200, { ...(u.searchParams.get('verify') === '1' ? { valid: await auditValidOf(null, true) } : {}), ...r }); }
   if (M === 'GET' && p === '/api/platform/roles') return json(res, 200, { roles: Object.fromEntries(Object.entries(ROLES).filter(([k]) => ROLESX.assignable(k)).map(([k, r]) => [k, { label: r.label, perms: r.perms }])), perms: PERMS, grantable: GRANTABLE });
 
+  /* ---- corbeille de toutes les institutions (surveillance des suppressions et restaurations) ---- */
+  if (M === 'GET' && p === '/api/platform/trash') {
+    const only = str(u.searchParams.get('tenantId') || '', 16), out = [];
+    for (const t of platform.tenants) {
+      if (only && t.id !== only) continue;
+      await withTenant(t, async ctx => { for (const e of TR.filter(ctx.store.trash || [], u.searchParams)) out.push({ ...TR.summary(e), tenantId: t.id, tenant: t.name, tenantSlug: t.slug }); });
+    }
+    out.sort((a, b) => (b.deletedAt || '').localeCompare(a.deletedAt || ''));
+    paudit('corbeille des établissements consultée', req, { filtres: Object.fromEntries(u.searchParams) }); persistPlatform();
+    return json(res, 200, { items: out.slice(0, 2000), total: out.length, types: { ...TR.SOFT, customRoles: 'Rôle personnalisé' } });
+  }
   /* ---- établissements ---- */
   if (p === '/api/platform/tenants' && M === 'GET') return json(res, 200, { items: platform.tenants.map(PF.publicTenant), defaultTenantId: platform.settings.defaultTenantId, statuses: PF.STATUSES, today: today() });
   if (p === '/api/platform/tenants' && M === 'POST') {
@@ -1034,6 +1113,13 @@ async function platformRoute(req, res, u) {
       if (M !== 'GET') { paudit('compte d’établissement géré par le Super Admin', req, { tenantId: t.id, etablissement: t.name, action: M + ' ' + sub }); persistPlatform(); }
       req.user = saActor(req, a);
       try { return await usersApi(req, res, '/api' + sub, M); } finally { req.user = null; }
+    });
+  }
+  if (sub.startsWith('/trash/')) {
+    return withTenant(t, async () => {
+      if (M === 'POST') { paudit('restauration demandée par le Super Admin', req, { tenantId: t.id, etablissement: t.name, element: sub }); persistPlatform(); }
+      req.user = saActor(req, a);
+      try { return await trashApi(req, res, '/api' + sub, M, u); } finally { req.user = null; }
     });
   }
   if (sub === '/enter' && M === 'POST') {
