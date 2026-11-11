@@ -1,12 +1,12 @@
 # UniTimetable — plateforme multi-établissements (Super Admin)
 
-Version 3.0 · phase 1 sur 3 (sections 21 et 22 du cahier des charges).
+Version 3.1 · les 3 phases sont livrées (sections 21 et 22 du cahier des charges).
 
 | Phase | Contenu | État |
 |---|---|---|
 | 1 | Établissements isolés, compte Super Admin, gestion des établissements et de leurs comptes, rôles, journal d'audit séparé et inaltérable, historique d'activité filtrable | **livrée** |
-| 2 | Suppression logique partout, Corbeille, restauration avec détection des conflits | à venir |
-| 3 | Identité visuelle par établissement (nom, logo, couleurs, documents PDF) | à venir |
+| 2 | Suppression logique partout, Corbeille, restauration avec détection des conflits | **livrée** |
+| 3 | Identité visuelle par établissement (nom, logo, couleurs, documents PDF) | **livrée** |
 
 ## 1. Principe
 
@@ -112,3 +112,70 @@ Les tests automatiques (`tests/tenancy.test.js`, 178 vérifications sur fichiers
   - **Finance**.
   Les rôles personnalisés n'ont jamais les droits d'administration.
 - Un administrateur d'établissement ne voit jamais un autre établissement. Il ne peut pas modifier le statut ni l'abonnement de son établissement.
+
+## 8. Suppression logique et Corbeille (phase 2)
+
+Le serveur applique cette règle, quelle que soit l'interface utilisée : **le bouton Supprimer n'efface jamais rien**.
+
+- **Ce qui se passe à la suppression.** Quand un élément disparaît des données enregistrées par un poste, le serveur le place dans la **Corbeille** de l'établissement, avec :
+  - son identifiant d'origine ;
+  - toutes ses valeurs et ses liens ;
+  - le statut « supprimé » ;
+  - l'auteur, la date et l'heure ;
+  - le motif.
+  Un événement « suppression logique » est ajouté au journal d'audit.
+- **Éléments concernés :** étudiants, enseignants, séances, groupes, matières, salles, filières, modèles de documents, volumes horaires, rôles personnalisés.
+  - Les comptes utilisateurs ne se suppriment pas : ils se désactivent.
+  - Les déclarations d'absence s'annulent, avec leur historique.
+- **Motif.** Il est demandé à chaque suppression. L'administrateur peut le rendre **obligatoire** (Administration → Établissement). Dans ce cas, le serveur refuse toute suppression sans motif.
+- **Onglet 🗑 Corbeille :**
+  - recherche ;
+  - filtres par type, état et période ;
+  - détail des valeurs conservées et de l'historique ;
+  - bouton **Restaurer**, réservé aux autorisations « Restaurer des éléments supprimés » : l'administrateur par défaut, ou un compte qui a reçu ce droit.
+  - Chacun ne voit que les rubriques qu'il gère. Par exemple, la planification ne voit pas les étudiants supprimés.
+- **Restauration.** L'élément revient avec le **même identifiant**, ses liens et, pour un étudiant, son historique de groupes. Il n'y a jamais de doublon.
+  - Les conflits sont signalés clairement, et la restauration reste bloquée tant qu'ils ne sont pas résolus :
+    - doublon (même matricule, même nom) ;
+    - dépendance supprimée (« restaurez d'abord l'enseignant ») ;
+    - conflit d'emploi du temps (salle, enseignant ou groupe déjà occupés sur le créneau).
+  - Suppression et restauration sont **deux événements distincts** du journal. L'historique complet reste disponible.
+- **Super Admin :**
+  - menu **Corbeilles** : suppressions et restaurations de tous les établissements, avec filtres ;
+  - restauration possible, inscrite dans le journal de l'établissement et dans celui de la plateforme.
+- Aucune route ne permet de vider la Corbeille ni de supprimer définitivement un élément.
+
+## 9. Identité visuelle (phase 3)
+
+Elle se règle dans Administration → **Identité visuelle**, avec l'autorisation « Modifier les informations et l'identité visuelle ». Il n'y a aucun code à modifier et rien à recompiler.
+
+- **Noms :**
+  - nom affiché dans l'application ;
+  - nom des rapports et des documents officiels ;
+  - nom en arabe.
+- **Logo :**
+  - formats PNG, JPEG ou WEBP. Le SVG est refusé pour la sécurité, et le contenu du fichier est vérifié ;
+  - réduction automatique, 400 Ko au maximum ;
+  - aperçu avant d'enregistrer ;
+  - emplacements à choisir : barre de navigation, page de connexion, tableau de bord, rapports et PDF, documents officiels.
+- **Couleurs :**
+  - six couleurs : principale, secondaire, fond, barre de navigation, boutons, texte ;
+  - **aperçu en direct** sur la page ;
+  - alerte si le contraste est insuffisant ;
+  - texte de l'en-tête et des boutons calculé automatiquement pour rester lisible ;
+  - bouton **Rétablir le thème par défaut**.
+- **Où l'identité est appliquée :**
+  - page de connexion (selon le code de l'établissement) ;
+  - en-tête et barre de navigation, tableau de bord, toutes les pages ;
+  - rapport PDF d'avancement (nom et logo) ;
+  - impressions ;
+  - feuille de suivi des absences ;
+  - attestations Word : champs `{{etablissement}}` et `{{etablissement_ar}}` ;
+  - formulaire de déclaration des enseignants (lien WhatsApp).
+- **Limite :** le logo n'est pas inséré automatiquement dans les attestations Word. Placez-le directement dans le modèle `.docx`.
+- **Établissement d'origine :** il garde ses logos UM6SS sur la feuille d'émargement tant qu'aucun logo n'est défini.
+- **Séparation :** chaque établissement a sa propre identité. Une modification n'a aucun effet sur les autres. Le journal garde une empreinte du logo, pas l'image.
+- **Super Admin :** voit l'identité de chaque établissement dans sa fiche. Il ne peut pas la modifier en mode consultation.
+- **Thème par défaut de la plateforme :** le thème d'origine, plus le nom de la plateforme (Paramètres).
+
+**Aucune nouvelle étape SQL** pour les phases 2 et 3 : tout est enregistré dans les documents de chaque établissement. Le `schema.sql` de la phase 1 suffit.

@@ -18,7 +18,7 @@ const R = [
   ["e.status=r.status;throw e}return j}", "e.status=r.status;e.body=j;throw e}return j}"],
   ["user:SRV.on&&SRV.auth?'administration (serveur)':'poste local'", "user:SRV.on&&SRV.auth?(window.USR?USR.username+' ('+USR.roleLabel+')':'serveur'):'poste local'"],
   ['function render(){$(\'#nav\')', 'function render0(){$(\'#nav\')'],
-  ["tab==='templates'?tplView():", "tab==='admin'?admView():tab==='templates'?tplView():"],
+  ["tab==='templates'?tplView():", "tab==='admin'?admView():tab==='trash'?trashView():tab==='templates'?tplView():"],
   ['function polView(){', 'function polView0(){'],
   ['function studentsOf(s){', 'function studentsOf0(s){'],
   ['function absDlg(sid){', 'function absDlg0(sid){'],

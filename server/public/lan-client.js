@@ -4,7 +4,7 @@
    Rappel : masquer un onglet n'est qu'un confort ; toutes les autorisations sont vérifiées par le serveur. */
 var USR = null, TEN = null, SRV_BLOCKED = '';
 /* en-tête : le menu passe à la ligne au lieu de se réduire à une colonne quand l'en-tête est chargé */
-(function () { const st = document.createElement('style'); st.textContent = '#nav{min-width:min(100%,560px)}#usr .tenant{display:inline-block;max-width:220px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;vertical-align:middle}'; document.head.appendChild(st); })();
+(function () { const st = document.createElement('style'); st.textContent = '#mbox:has(>div[style*="min-width"]){max-width:min(96vw,680px)}#nav{min-width:min(100%,560px)}#usr .tenant{display:inline-block;max-width:220px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;vertical-align:middle}'; document.head.appendChild(st); })();
 const ALL_TABS = TABS.slice();
 const TAB_ROLES = { admin: null, scolarite: ['dashboard', 'timetable', 'today', 'progress', 'students', 'absences', 'audit'], planning: ['dashboard', 'timetable', 'today', 'progress', 'import', 'programs', 'teachers', 'subjects', 'rooms', 'levels'], teacher: ['today', 'timetable', 'absences'], direction: ['dashboard', 'timetable', 'today', 'progress', 'students', 'absences', 'audit'], finance: ['dashboard', 'timetable', 'progress', 'teachers'] };
 const TAB_PARENT = { simport: 'students', timport: 'teachers', templates: 'students', tplgen: 'students', sheet: 'today' };
@@ -15,6 +15,7 @@ function applyRoleTabs() {
   const allow = USR ? TAB_ROLES[USR.role] : null;
   const list = ALL_TABS.filter(t => !allow || allow.includes(t[0]));
   if (allow && USR.role === 'teacher') list.sort((a, b) => allow.indexOf(a[0]) - allow.indexOf(b[0]));
+  if (hasP('trash.read') || hasP('trash.restore') || (USR && USR.writable && USR.writable.some(k => TRASH_COLL[k]))) list.push(['trash', '🗑 Corbeille']);
   if (hasP('users.manage')) list.push(['admin', 'Administration']);
   TABS.splice(0, TABS.length, ...list);
 }
@@ -22,17 +23,19 @@ function lanGate() {
   if (!served() || (SRV.checked && !SRV.on)) return false;         // fichier local / sans serveur : ancien mode autonome
   if (SRV.checked && SRV.auth && USR && !USR.mustChange) return false;
   $('#nav').innerHTML = ''; lanBadge();
-  $('#app').innerHTML = `<div class="card" style="max-width:520px;margin:40px auto;text-align:center"><h2 style="margin-top:0">UniTimetable</h2><p class="mu">${!SRV.checked ? 'Connexion au serveur…' : SRV.setup ? 'Aucun compte n’existe encore sur ce serveur.' : USR && USR.mustChange ? 'Vous devez choisir un nouveau mot de passe.' : 'Connectez-vous avec votre compte personnel pour accéder aux données de l’établissement.'}</p>${SRV.checked ? `<button class="pri" onclick="${USR && USR.mustChange ? 'pwDlg(true)' : 'srvLogin()'}">${USR && USR.mustChange ? 'Changer mon mot de passe' : 'Se connecter'}</button>` : ''}</div>`;
+  $('#app').innerHTML = `<div class="card" style="max-width:520px;margin:40px auto;text-align:center"><h2 style="margin-top:0">${esc(BRAND && (BRAND.effective || BRAND).name || 'UniTimetable')}</h2><p class="mu">${!SRV.checked ? 'Connexion au serveur…' : SRV.setup && !new URLSearchParams(location.search).get('etab') ? 'Aucun compte n’existe encore sur ce serveur.' : USR && USR.mustChange ? 'Vous devez choisir un nouveau mot de passe.' : 'Connectez-vous avec votre compte personnel pour accéder aux données de l’établissement.'}</p>${SRV.checked ? `<button class="pri" onclick="${USR && USR.mustChange ? 'pwDlg(true)' : 'srvLogin()'}">${USR && USR.mustChange ? 'Changer mon mot de passe' : 'Se connecter'}</button>` : ''}</div>`;
   return true;
 }
 function render() {
   if (lanGate()) return;
   if (USR) {
     if (tab === 'admin' && !hasP('users.manage')) tab = TABS[0][0];
+    if (tab === 'trash' && !TABS.some(x => x[0] === 'trash')) tab = TABS[0][0];
     const t = TAB_PARENT[tab] || tab;
-    if (tab !== 'admin' && !TABS.some(x => x[0] === t)) tab = TABS[0][0];
+    if (tab !== 'admin' && tab !== 'trash' && !TABS.some(x => x[0] === t)) tab = TABS[0][0];
   }
   render0(); lanBadge();
+  if (USR && BRAND && tab === 'dashboard') { const a = $('#app'), lg = brandLogo('dashboard'), e = BRAND.effective || {}; if (a && (lg || e.name)) { const d = document.createElement('div'); d.className = 'card'; d.id = 'brandbanner'; d.style.cssText = 'display:flex;gap:14px;align-items:center'; d.innerHTML = (lg ? `<img src="${lg}" alt="" style="max-height:56px;max-width:180px;object-fit:contain">` : '') + `<div><b style="font-size:18px">${esc(e.name)}</b>${e.nameAr ? `<div dir="rtl" class="mu">${esc(e.nameAr)}</div>` : ''}</div>`; a.insertBefore(d, a.firstChild) } }
 }
 function lanBadge() {
   let e = $('#usr'); if (!e) return;
@@ -55,7 +58,7 @@ async function srvInit() {
 }
 async function srvMe() {
   let m; try { m = await api('GET', '/api/me') } catch (e) { SRV.auth = false; render(); return }
-  SRV.auth = !!m.auth; SRV.setup = !!m.setupRequired; USR = m.user || null; TEN = m.tenant || TEN; SRV_BLOCKED = m.blocked || '';
+  SRV.auth = !!m.auth; SRV.setup = !!m.setupRequired; USR = m.user || null; TEN = m.tenant || TEN; SRV_BLOCKED = m.blocked || ''; SRV.prefs = m.prefs || {}; if (m.brand) { BRAND = m.brand; brandApply(BRAND) }
   if (!SRV.auth) { USR = null; render(); srvLogin(SRV_BLOCKED); return }
   lanSwitchUser();
   if (USR.mustChange) { render(); pwDlg(true); return }
@@ -78,12 +81,48 @@ function lanSwitchUser() {
   ST.rev = 0; ST.dirty = false; load(); AB.list = [];
 }
 function srvLogin(msg) {
-  if (SRV.setup) { modal(`<h3 style="margin-top:0">Aucun compte n’existe encore</h3><p>Sur le PC serveur, créez le premier administrateur avec la commande<br><code>node tools\\create-admin.js</code><br>(voir README-LOCAL-WINDOWS.md), puis rechargez cette page.</p><div class="row"><button class="pri" onclick="location.reload()">Recharger</button></div>`); $('#modal').onclick = null; return }
+  let knownCode = new URLSearchParams(location.search).get('etab'); try { knownCode = knownCode || localStorage.getItem('unitt-etab') } catch (e) { }
+  if (SRV.setup && !knownCode && !srvLogin.withCode) { modal(`<h3 style="margin-top:0">Aucun compte n’existe encore</h3><p>Sur le PC serveur, créez le premier administrateur avec la commande<br><code>node tools\\create-admin.js</code><br>(voir README-LOCAL-WINDOWS.md), puis rechargez cette page.</p><div class="row"><button class="pri" onclick="location.reload()">Recharger</button><button onclick="srvLogin.withCode=1;closeModal();srvLogin()">J’ai un code d’établissement</button></div>`); $('#modal').onclick = null; return }
+  if ($('#srv_us') && $('#modal').classList.contains('show')) { if (msg) $('#ferr').textContent = msg; return }   // formulaire déjà affiché : ne pas effacer la saisie
   let last = '', code = ''; try { last = localStorage.getItem('unitt-last-user') || ''; code = localStorage.getItem('unitt-etab') || '' } catch (e) { }
   const qp = new URLSearchParams(location.search).get('etab'); if (qp) code = qp.trim().toLowerCase();
   if (TEN && !code && !TEN.legacy) code = TEN.slug;
-  modal(`<h3 style="margin-top:0">Connexion à UniTimetable</h3><p class="mu">Connectez-vous avec votre compte personnel.</p><label>Code de l’établissement <span class="mu" style="font-weight:normal">(fourni par votre administrateur ; laisser vide pour l’établissement par défaut)</span></label><input id="srv_et" autocomplete="organization" autocapitalize="none" placeholder="ex. fm6sips-dakhla" value="${esc(code)}"><label>Identifiant</label><input id="srv_us" autocomplete="username" autocapitalize="none" value="${esc(last)}"><label>Mot de passe</label><input id="srv_pw" type="password" autocomplete="current-password" onkeydown="if(event.key==='Enter')srvDoLogin()"><div class="err" id="ferr">${esc(msg || '')}</div><div class="row" style="margin-top:12px"><button class="pri" id="srv_go" onclick="srvDoLogin()">Se connecter</button></div><p class="mu" style="font-size:12px">Mot de passe oublié ou compte verrouillé : contactez l’administrateur de votre établissement.</p>`);
+  modal(`<div id="lg_brand" style="text-align:center;margin-bottom:6px"></div><h3 style="margin-top:0">Connexion</h3><p class="mu">Connectez-vous avec votre compte personnel.</p><label>Code de l’établissement <span class="mu" style="font-weight:normal">(fourni par votre administrateur ; laisser vide pour l’établissement par défaut)</span></label><input id="srv_et" autocomplete="organization" autocapitalize="none" placeholder="ex. fm6sips-dakhla" value="${esc(code)}" onchange="brandLogin(this.value)"><label>Identifiant</label><input id="srv_us" autocomplete="username" autocapitalize="none" value="${esc(last)}"><label>Mot de passe</label><input id="srv_pw" type="password" autocomplete="current-password" onkeydown="if(event.key==='Enter')srvDoLogin()"><div class="err" id="ferr">${esc(msg || '')}</div><div class="row" style="margin-top:12px"><button class="pri" id="srv_go" onclick="srvDoLogin()">Se connecter</button></div><p class="mu" style="font-size:12px">Mot de passe oublié ou compte verrouillé : contactez l’administrateur de votre établissement.</p>`);
   $('#modal').onclick = null; setTimeout(() => { const e = last ? $('#srv_pw') : $('#srv_us'); e && e.focus() }, 50);
+  brandLogin(code);
+}
+/* ---------- identité visuelle de l'établissement (nom, logo, couleurs) ---------- */
+var BRAND = null;
+function brandName(kind) { const e = BRAND && (BRAND.effective || BRAND); if (e && (e.name || e.reportName)) return (kind === 'reports' || kind === 'documents') ? (e.reportName || e.name) : (e.name || e.reportName); return (S && S.cfg && S.cfg.etab) || 'UniTimetable' }
+function brandNameAr() { const e = BRAND && (BRAND.effective || BRAND); return (e && e.nameAr) || '' }
+function brandLogo(kind) { return BRAND && BRAND.logo && (!BRAND.logoPlaces || BRAND.logoPlaces[kind]) ? BRAND.logo : '' }
+function sheetLogos() { const l = brandLogo('documents'); if (l) return [l, '']; return TEN && TEN.legacy && !(BRAND && BRAND.logo) ? [LOGO1, LOGO2] : ['', ''] }
+const hexRgb = h => [1, 3, 5].map(i => parseInt(h.slice(i, i + 2), 16) / 255);
+const lum = h => { const c = hexRgb(h).map(v => v <= 0.03928 ? v / 12.92 : Math.pow((v + 0.055) / 1.055, 2.4)); return 0.2126 * c[0] + 0.7152 * c[1] + 0.0722 * c[2] };
+const ratio = (a, b) => { const x = lum(a), y = lum(b); return (Math.max(x, y) + 0.05) / (Math.min(x, y) + 0.05) };
+const onColor = h => ratio(h, '#ffffff') >= ratio(h, '#111111') ? '#ffffff' : '#111111';
+function brandCss(c) {
+  c = c || {}; const r = [], L = (sel, d) => { r.push(`@media (prefers-color-scheme:light){html:not([data-theme="dark"]) ${sel}{${d}}}`, `html[data-theme="light"] ${sel}{${d}}`) };
+  if (c.primary) r.push(`:root{--ac:${c.primary};--acx:${onColor(c.primary)}}`);
+  if (c.button) r.push(`button.pri{background:${c.button}!important;border-color:${c.button}!important;color:${onColor(c.button)}!important}`);
+  if (c.secondary) { r.push(`header{border-bottom:3px solid ${c.secondary}!important}`); L('.card h2', `color:${c.secondary}`) }
+  if (c.background) L('body', `background:${c.background}`), r.push(`@media (prefers-color-scheme:light){html:not([data-theme="dark"]){--bg:${c.background}}}`, `html[data-theme="light"]{--bg:${c.background}}`);
+  if (c.text) r.push(`@media (prefers-color-scheme:light){html:not([data-theme="dark"]){--tx:${c.text}}}`, `html[data-theme="light"]{--tx:${c.text}}`);
+  if (c.sidebar) { const o = onColor(c.sidebar); L('header', `background:${c.sidebar}!important`); L('header h1, header .mu, header #saved', `color:${o}!important`) }
+  return r.join('\n');
+}
+function brandApply(b) {
+  b = b || {}; let st = document.getElementById('brandcss'); if (!st) { st = document.createElement('style'); st.id = 'brandcss'; document.head.appendChild(st) }
+  st.textContent = brandCss(b.colors);
+  const e = b.effective || b, nm = e.name || 'UniTimetable', h1 = document.querySelector('header h1');
+  if (h1) h1.innerHTML = (b.logo && (!b.logoPlaces || b.logoPlaces.sidebar) ? `<img src="${b.logo}" alt="" style="height:30px;max-width:120px;object-fit:contain;vertical-align:middle;margin-right:8px">` : '🎓 ') + esc(nm);
+  document.title = nm + (nm === 'UniTimetable' ? '' : ' — UniTimetable');
+}
+async function brandLogin(code) {
+  let b = null; try { b = (await api('GET', '/api/branding' + (code ? '?etab=' + encodeURIComponent(code.trim().toLowerCase()) : ''))).brand } catch (e) { }
+  const el = $('#lg_brand'); if (!el || !b) return;
+  el.innerHTML = (b.logo ? `<img src="${b.logo}" alt="" style="max-height:70px;max-width:220px;object-fit:contain"><br>` : '') + `<b style="font-size:17px">${esc(b.name || 'UniTimetable')}</b>${b.nameAr ? `<div dir="rtl" class="mu">${esc(b.nameAr)}</div>` : ''}`;
+  if (!SRV.auth) brandApply({ colors: b.colors, logo: b.logo, logoPlaces: { sidebar: true }, name: b.name });
 }
 async function srvDoLogin() {
   const us = ($('#srv_us').value || '').trim().toLowerCase(), pw = $('#srv_pw').value, et = (($('#srv_et') || {}).value || '').trim().toLowerCase();
@@ -145,19 +184,42 @@ function stApply(data, rev) {
   try { localStorage.setItem('unitt-v1-pre-sync', localStorage.getItem(KEY) || '') } catch (e) { }
   const raw = JSON.stringify(data); try { localStorage.setItem(KEY, raw) } catch (e) { }
   const gi = Storage.prototype.getItem; Storage.prototype.getItem = function (k) { return k === KEY ? raw : gi.call(this, k) };   // charge ces données même si le stockage du navigateur est plein
-  try { load() } finally { Storage.prototype.getItem = gi } stRev(rev); stDirt(false); ST.conflict = false; ST.err = ''; ST.roDirty = false; ST.lastNorm = stNorm(S);
+  try { load() } finally { Storage.prototype.getItem = gi } stRev(rev); stDirt(false); ST.conflict = false; ST.err = ''; ST.roDirty = false; ST.lastNorm = stNorm(S); stBase(data);
   if (syncStatuses()) { ST.skip = true; save(); ST.skip = false } render(); stBadge();
 }
+/* ---------- suppression logique : motif de suppression (le serveur conserve tout élément supprimé dans la corbeille) ---------- */
+const TRASH_COLL = { students: 'Étudiant', teachers: 'Enseignant', sessions: 'Séance', levels: 'Groupe', subjects: 'Matière', rooms: 'Salle', programs: 'Filière', templates: 'Modèle de document', volumes: 'Volume horaire' };
+const recLabel = x => x ? (x.lastName ? String(x.lastName).toUpperCase() + ' ' + (x.firstName || '') + (x.matricule ? ' (' + x.matricule + ')' : '') : (x.name || x.title || x.label || '') + (x.date || x.day ? ' — ' + (x.date || x.day) + ' ' + (x.startTime || '') : '')) : '';
+function stBase(d) { const b = {}; for (const k of Object.keys(TRASH_COLL)) b[k] = ((d && d[k]) || []).filter(x => x && x.id).map(x => [x.id, recLabel(x).slice(0, 120)]); ST.base = b; try { localStorage.setItem('unitt-st-base', JSON.stringify(b)) } catch (e) { } }
+function stDeleted() {
+  let b = ST.base; if (!b) { try { b = JSON.parse(localStorage.getItem('unitt-st-base') || 'null') } catch (e) { } } if (!b) return [];
+  const out = []; for (const k of Object.keys(TRASH_COLL)) { const now = new Set((S[k] || []).map(x => x && x.id)); for (const e of b[k] || []) { const [id, label] = Array.isArray(e) ? e : [e, '']; if (!now.has(id)) out.push({ collection: k, id, label }); } } return out;
+}
+function delLabel(d) { return TRASH_COLL[d.collection] + (d.label ? ' : ' + d.label : '') }
+function stAskReason(list, required) {
+  ST.askingDel = true;
+  modal(`<div style="min-width:min(92vw,520px)"><h3 style="margin-top:0">🗑 Suppression : ${list.length} élément(s)</h3><p class="mu" style="font-size:13px">Rien n’est effacé définitivement : les éléments supprimés sont conservés dans la <b>Corbeille</b> et peuvent être restaurés par un administrateur.</p><div class="tw" style="max-height:160px;overflow:auto"><table>${list.slice(0, 40).map(d => `<tr><td>${esc(delLabel(d))}</td></tr>`).join('')}${list.length > 40 ? '<tr><td class="mu">… et ' + (list.length - 40) + ' autre(s)</td></tr>' : ''}</table></div><label>Motif de la suppression ${required ? '(obligatoire)' : '(facultatif, recommandé)'}</label><input id="del_r" placeholder="ex. doublon, abandon, erreur de saisie…"><div class="err" id="ferr"></div><div class="row" style="margin-top:12px"><button class="pri" onclick="stReasonGo(${required ? 1 : 0})">Confirmer la suppression</button>${required ? '' : '<button onclick="stReasonGo(0,1)">Sans motif</button>'}</div></div>`);
+  $('#modal').onclick = null; setTimeout(() => $('#del_r') && $('#del_r').focus(), 50);
+}
+function stReasonGo(required, skip) {
+  const v = skip ? '' : ($('#del_r').value || '').trim(); if (required && v.length < 3) return $('#ferr').textContent = 'Indiquez un motif (3 caractères minimum).';
+  ST.delReason = v; ST.delAsked = true; ST.askingDel = false; closeModal(); $('#modal').onclick = e => { if (e.target.id === 'modal') closeModal() }; stPush();
+}
 async function stPush() {
-  if (!ST.on || ST.busy || ST.conflict || !ST.dirty) return; ST.busy = true; const sent = ST.v;
+  if (!ST.on || ST.busy || ST.conflict || !ST.dirty || ST.askingDel) return;
+  const dels = stDeleted();
+  if (dels.length && !ST.delAsked) return stAskReason(dels, !!(SRV.prefs && SRV.prefs.requireDeleteReason));
+  ST.busy = true; const sent = ST.v;
   if (!ST.op) ST.op = Date.now().toString(36) + Math.random().toString(36).slice(2, 10);
   try {
-    const j = await api('PUT', '/api/state', { baseRev: ST.rev, data: S, opId: ST.op }); ST.op = null; ST.err = '';
+    const j = await api('PUT', '/api/state', { baseRev: ST.rev, data: S, opId: ST.op, ...(ST.delReason ? { deleteReason: ST.delReason } : {}) }); ST.op = null; ST.err = '';
+    if (ST.v === sent) { ST.delAsked = false; ST.delReason = ''; stBase(S) }
     if (j.merged && j.data) {
       if (ST.v === sent) { stApply(j.data, j.rev); toast('Vos modifications ont été fusionnées avec celles d’un autre poste') }
       else { clearTimeout(ST.t); ST.t = setTimeout(stPush, ST.ms) }   // nouvelle saisie entre-temps : on garde l'ancienne base, le serveur refusionnera
     } else { stRev(j.rev); if (ST.v === sent) { stDirt(false); ST.lastNorm = stNorm(S) } else { clearTimeout(ST.t); ST.t = setTimeout(stPush, ST.ms) } }
   } catch (e) {
+    if (e.status === 400 && e.body && e.body.needDeleteReason) { ST.op = null; ST.busy = false; ST.delAsked = false; if (SRV.prefs) SRV.prefs.requireDeleteReason = true; stAskReason(e.body.deletions || [], true); return }
     if (e.status === 409) { ST.op = null; ST.busy = false; await stConflict(e.body); return }
     if (e.status === 403) { ST.op = null; ST.busy = false; stForbidden(e); return }
     if (e.status === 401) { stStop(); SRV.auth = false; USR = null; render(); srvLogin('Session expirée : reconnectez-vous. Vos modifications non envoyées sont conservées sur ce poste.') }
@@ -234,6 +296,7 @@ var ADM = { users: [], roles: null, info: null, backups: [], audit: [], err: '' 
 function admView() {
   setTimeout(admLoad, 0);
   return `<div class="card"><div class="row"><h2 style="margin:0;flex:1">Établissement</h2>${hasP('institution.manage') ? '<button onclick="instDlg()">Modifier</button>' : ''}</div><div id="adm_inst" class="mu">Chargement…</div></div>
+  ${hasP('institution.manage') ? '<div class="card"><div class="row"><h2 style="margin:0;flex:1">Identité visuelle</h2></div><p class="mu" style="font-size:13px;margin:4px 0">Nom, logo et couleurs de votre établissement : appliqués à la connexion, à l’application, aux rapports, aux PDF et aux documents. N’affecte aucun autre établissement.</p><div id="adm_brand"></div></div>' : ''}
   <div class="card"><div class="row"><h2 style="margin:0;flex:1">Comptes des employés</h2><button class="pri" onclick="usrDlg()">+ Nouveau compte</button></div><div id="adm_users" class="mu">Chargement…</div></div>
   <div class="card"><div class="row"><h2 style="margin:0;flex:1">Rôles personnalisés</h2><button onclick="roleDlg()">+ Nouveau rôle</button></div><p class="mu" style="font-size:12px;margin:4px 0">En plus des rôles standards (Administrateur, Scolarité, Planning, Enseignant, Direction, Finance). Les droits d’administration ne peuvent pas être donnés à un rôle personnalisé.</p><div id="adm_roles" class="mu">Chargement…</div></div>
   <div class="card"><div class="row"><h2 style="margin:0;flex:1">Serveur et sauvegardes</h2><button onclick="admBackup()">Créer une sauvegarde maintenant</button></div><div id="adm_info" class="mu">Chargement…</div><div id="adm_bk"></div><p class="mu" style="font-size:12px">La restauration d’une sauvegarde du serveur se fait sur le PC serveur, serveur arrêté : <code>windows\\restore.ps1</code> (voir README-LOCAL-WINDOWS.md).</p></div>
@@ -258,6 +321,46 @@ function instDlg() {
   const t = ADM.inst || {}, c = t.contact || {};
   modal(`<div style="min-width:min(92vw,520px)"><h3 style="margin-top:0">Informations de l’établissement</h3><label>Nom (français)</label><input id="in_n" value="${esc(t.name || '')}"><label>Nom (arabe)</label><input id="in_a" dir="rtl" value="${esc(t.nameAr || '')}"><label>Nom court (affiché dans l’application)</label><input id="in_s" value="${esc(t.shortName || '')}"><div class="row"><div style="flex:1"><label>E-mail</label><input id="in_e" value="${esc(c.email || '')}"></div><div style="flex:1"><label>Téléphone</label><input id="in_p" value="${esc(c.phone || '')}"></div></div><label>Adresse</label><input id="in_ad" value="${esc(c.address || '')}"><div class="row"><div style="flex:1"><label>Ville</label><input id="in_c" value="${esc(c.city || '')}"></div><div style="flex:1"><label>Responsable / contact</label><input id="in_r" value="${esc(c.person || '')}"></div></div><p class="mu" style="font-size:12px">Code de connexion : <b>${esc(t.slug || '')}</b> · statut et abonnement gérés par l’administrateur de la plateforme.</p><div class="err" id="ferr"></div><div class="row" style="margin-top:12px"><button class="pri" onclick="instSave()">Enregistrer</button><button onclick="closeModal()">Annuler</button></div></div>`);
 }
+/* ---------- éditeur d'identité visuelle (aperçu en direct sur la page) ---------- */
+const BR_COLORS = [['primary', 'Couleur principale (onglets, liens, mise en avant)', '#4f46e5'], ['secondary', 'Couleur secondaire (titres, filet de l’en-tête)', '#0f766e'], ['background', 'Couleur de fond', '#f5f6fa'], ['sidebar', 'Barre de navigation (en-tête)', '#ffffff'], ['button', 'Boutons et éléments interactifs', '#4f46e5'], ['text', 'Texte et éléments importants', '#1b1f2a']];
+const BR_PLACES = [['sidebar', 'Barre de navigation'], ['login', 'Page de connexion'], ['dashboard', 'Tableau de bord'], ['reports', 'Rapports et PDF'], ['documents', 'Documents officiels, feuilles d’émargement, attestations']];
+var BRE = null;
+function brPaint() {
+  const el = $('#adm_brand'); if (!el || !BRAND) return;
+  BRE = JSON.parse(JSON.stringify({ displayName: BRAND.displayName || '', reportName: BRAND.reportName || '', nameAr: BRAND.nameAr || '', logo: BRAND.logo || '', logoPlaces: BRAND.logoPlaces || {}, colors: BRAND.colors || {} }));
+  el.innerHTML = `<div class="row"><div style="flex:1;min-width:200px"><label>Nom affiché dans l’application</label><input id="br_dn" placeholder="${esc((BRAND.effective || {}).name || '')}" value="${esc(BRE.displayName)}" oninput="brLive()"></div><div style="flex:1;min-width:200px"><label>Nom dans les rapports et documents officiels</label><input id="br_rn" placeholder="${esc(TEN ? TEN.name : '')}" value="${esc(BRE.reportName)}" oninput="brLive()"></div><div style="flex:1;min-width:200px"><label>Nom en arabe</label><input id="br_ar" dir="rtl" value="${esc(BRE.nameAr)}" oninput="brLive()"></div></div>
+  <div class="row" style="align-items:flex-start;margin-top:8px"><div style="flex:1;min-width:240px"><label>Logo (PNG, JPEG ou WEBP ; réduit automatiquement)</label><div id="br_lp" style="border:1px dashed var(--bd);border-radius:8px;min-height:80px;display:flex;align-items:center;justify-content:center;padding:8px;background:var(--card)">${BRE.logo ? `<img src="${BRE.logo}" alt="Logo" style="max-height:90px;max-width:100%">` : '<span class="mu">Aucun logo</span>'}</div><div class="row" style="margin-top:6px"><label class="btn" style="margin:0"><input type="file" accept="image/png,image/jpeg,image/webp" style="display:none" onchange="brLogo(this.files[0]);this.value=''"><span style="display:inline-block;padding:6px 10px;border:1px solid var(--bd);border-radius:8px;cursor:pointer">Choisir une image…</span></label>${'<button onclick="BRE.logo=\'\';brLive();brLogoView()">Retirer le logo</button>'}</div></div>
+  <div style="flex:1;min-width:240px"><label>Afficher le logo sur</label>${BR_PLACES.map(([k, l]) => `<label style="display:flex;gap:6px;align-items:center;font-weight:normal;margin:2px 0;color:var(--tx)"><input type="checkbox" class="br_pl" value="${k}" style="width:auto" ${BRE.logoPlaces[k] !== false ? 'checked' : ''} onchange="brLive()"> ${l}</label>`).join('')}</div></div>
+  <label style="margin-top:10px">Couleurs (case décochée = couleur par défaut du thème)</label><div class="row" style="flex-wrap:wrap">${BR_COLORS.map(([k, l, d]) => `<div style="min-width:240px;flex:1;display:flex;gap:6px;align-items:center;margin:3px 0"><input type="checkbox" id="brc_on_${k}" style="width:auto" ${BRE.colors[k] ? 'checked' : ''} onchange="brLive()"><input type="color" id="brc_${k}" value="${BRE.colors[k] || d}" style="width:44px;height:32px;padding:2px" oninput="$('#brc_on_${k}').checked=true;brLive()"><span style="font-size:13px">${l}</span></div>`).join('')}</div>
+  <div id="br_warn" style="font-size:13px;margin-top:6px"></div><div class="err" id="br_err"></div>
+  <div class="row" style="margin-top:10px"><button class="pri" onclick="brSave()">Enregistrer l’identité visuelle</button><button onclick="brCancel()">Annuler l’aperçu</button><button class="dng" onclick="brReset()">Rétablir le thème par défaut</button></div>
+  <p class="mu" style="font-size:12px">Aperçu en direct : les changements s’affichent immédiatement sur cette page, mais ne sont enregistrés (et visibles des autres utilisateurs) qu’après « Enregistrer ».</p>`;
+}
+function brForm() {
+  const c = {}; for (const [k] of BR_COLORS) if ($('#brc_on_' + k).checked) c[k] = $('#brc_' + k).value;
+  return { displayName: $('#br_dn').value, reportName: $('#br_rn').value, nameAr: $('#br_ar').value, logo: BRE.logo, logoPlaces: Object.fromEntries(BR_PLACES.map(([k]) => [k, !!document.querySelector('.br_pl[value="' + k + '"]:checked')])), colors: c };
+}
+function brLive() {
+  const f = brForm(), eff = { name: f.displayName || (BRAND.effective || {}).name, reportName: f.reportName || (BRAND.effective || {}).reportName, nameAr: f.nameAr };
+  brandApply({ ...f, effective: eff });
+  const w = [], c = f.colors, bg = c.background || '#f5f6fa', tx = c.text || '#1b1f2a';
+  if (c.text || c.background) { const r = ratio(tx, bg); if (r < 4.5) w.push('Contraste texte / fond insuffisant (' + r.toFixed(1) + ':1, minimum recommandé 4,5:1) : le texte risque d’être difficile à lire.') }
+  if (c.primary) { const r = ratio(c.primary, bg); if (r < 3) w.push('La couleur principale ressort peu sur le fond (' + r.toFixed(1) + ':1, minimum recommandé 3:1).') }
+  $('#br_warn').innerHTML = w.map(x => '<div style="color:#b45309">⚠ ' + esc(x) + '</div>').join('') || '<span style="color:var(--ok)">Contrastes suffisants ✔</span>';
+}
+function brLogoView() { const p = $('#br_lp'); if (p) p.innerHTML = BRE.logo ? `<img src="${BRE.logo}" alt="Logo" style="max-height:90px;max-width:100%">` : '<span class="mu">Aucun logo</span>' }
+function brLogo(f) {
+  if (!f) return; if (!/^image\/(png|jpeg|webp)$/.test(f.type)) return $('#br_err').textContent = 'Format accepté : PNG, JPEG ou WEBP.';
+  const rd = new FileReader(); rd.onload = () => { const im = new Image(); im.onload = () => {
+    const k = Math.min(1, 512 / Math.max(im.width, im.height)), cv = document.createElement('canvas'); cv.width = Math.round(im.width * k); cv.height = Math.round(im.height * k); cv.getContext('2d').drawImage(im, 0, 0, cv.width, cv.height);
+    let d = cv.toDataURL('image/png'); if (d.length > 380000) d = cv.toDataURL('image/webp', 0.85); if (d.length > 380000) d = cv.toDataURL('image/jpeg', 0.85);
+    if (d.length > 540000) return $('#br_err').textContent = 'Image trop lourde, même réduite : choisissez un logo plus simple.';
+    BRE.logo = d; $('#br_err').textContent = ''; brLogoView(); brLive() }; im.onerror = () => $('#br_err').textContent = 'Image illisible.'; im.src = rd.result }; rd.readAsDataURL(f);
+}
+async function brSave() { try { const r = await api('PUT', '/api/branding', brForm()); BRAND = r.brand; brandApply(BRAND); toast('Identité visuelle enregistrée'); brPaint() } catch (e) { $('#br_err').textContent = e.message } }
+function brCancel() { brandApply(BRAND); brPaint() }
+async function brReset() { if (!confirm('Rétablir les couleurs par défaut du thème ? Le nom et le logo sont conservés.')) return; try { const r = await api('PUT', '/api/branding', { resetColors: true }); BRAND = r.brand; brandApply(BRAND); toast('Thème par défaut rétabli'); brPaint() } catch (e) { $('#br_err').textContent = e.message } }
+async function prefSet(o) { try { const r = await api('PUT', '/api/prefs', o); SRV.prefs = r.prefs; toast('Réglage enregistré') } catch (e) { toast(e.message, true) } }
 async function instSave() { try { const r = await api('PUT', '/api/institution', { name: $('#in_n').value, nameAr: $('#in_a').value, shortName: $('#in_s').value, contact: { email: $('#in_e').value, phone: $('#in_p').value, address: $('#in_ad').value, city: $('#in_c').value, person: $('#in_r').value } }); TEN = Object.assign(TEN || {}, r.tenant); closeModal(); toast('Informations enregistrées'); admLoad(); lanBadge() } catch (e) { $('#ferr').textContent = e.message } }
 function roleDlg(key) {
   const R = ADM.roles.roles, r = key ? R[key] : null, G = ADM.roles.grantable, P = ADM.roles.perms, have = new Set(r ? r.perms : []);
@@ -276,8 +379,9 @@ function admPaint() {
   const i = ADM.info, ie = $('#adm_info'); ie.classList.remove('mu');
   ie.innerHTML = (i.vendorMissing && i.vendorMissing.length ? `<p style="color:#d97706"><b>⚠ Bibliothèques absentes du serveur :</b> ${esc(i.vendorMissing.join(', '))}. Les imports/exports Excel ou PDF correspondants ne fonctionnent pas. Sur le PC serveur, exécutez une fois <code>windows\\fetch-vendor.ps1</code> (connexion Internet nécessaire uniquement pendant cette commande).</p>` : '') + `<p style="font-size:13px">Version ${esc(i.version)} · Node ${esc(i.node)} · ${i.https ? 'HTTPS ✔' : '<span style="color:#d97706">HTTP (non chiffré)</span>'} · port ${i.port} · révision des données ${i.stateRev}${i.stateBy ? ' (' + esc(i.stateBy) + ', ' + esc((i.stateAt || '').slice(0, 16).replace('T', ' ')) + ')' : ''} · ${i.activeSessions} session(s) ouverte(s)<br><span class="mu">Données : ${esc(i.dataDir)} · Sauvegardes : ${esc(i.backupDir)} (toutes les ${i.backupIntervalHours} h, ${i.backupKeep} conservées) · Journaux : ${esc(i.logDir)}</span></p>`;
   $('#adm_bk').innerHTML = ADM.backups.length ? `<div class="tw" style="max-height:240px;overflow:auto"><table><tr><th>Sauvegarde</th><th>Date</th><th>Motif</th><th>Taille</th></tr>${ADM.backups.slice(0, 50).map(b => `<tr><td>${esc(b.name)}</td><td>${esc((b.createdAt || '').slice(0, 16).replace('T', ' '))}</td><td>${esc(b.reason || '')}</td><td>${b.files ? Math.round(Object.values(b.files).reduce((s, f) => s + f.bytes, 0) / 1024) + ' Ko' : ''}</td></tr>`).join('')}</table></div>` : '<p class="mu">Aucune sauvegarde pour l’instant.</p>';
-  const ins = ADM.inst || {}, ie2 = $('#adm_inst'); if (ie2) { ie2.classList.remove('mu'); ie2.innerHTML = `<p style="margin:4px 0"><b>${esc(ins.name || '')}</b>${ins.nameAr ? ' · <span dir="rtl">' + esc(ins.nameAr) + '</span>' : ''}<br><span class="mu" style="font-size:13px">Code de connexion : <b>${esc(ins.slug || '')}</b>${ins.contact && ins.contact.email ? ' · ' + esc(ins.contact.email) : ''}${ins.subscription && ins.subscription.endsAt ? ' · abonnement jusqu’au ' + esc(ins.subscription.endsAt) : ''}</span></p>` }
+  const ins = ADM.inst || {}, ie2 = $('#adm_inst'); if (ie2) { ie2.classList.remove('mu'); ie2.innerHTML = `<p style="margin:4px 0"><b>${esc(ins.name || '')}</b>${ins.nameAr ? ' · <span dir="rtl">' + esc(ins.nameAr) + '</span>' : ''}<br><span class="mu" style="font-size:13px">Code de connexion : <b>${esc(ins.slug || '')}</b>${ins.contact && ins.contact.email ? ' · ' + esc(ins.contact.email) : ''}${ins.subscription && ins.subscription.endsAt ? ' · abonnement jusqu’au ' + esc(ins.subscription.endsAt) : ''}</span></p>${hasP('institution.manage') ? `<label style="display:flex;gap:6px;align-items:center;font-weight:normal;margin:6px 0;color:var(--tx)"><input type="checkbox" style="width:auto" ${SRV.prefs && SRV.prefs.requireDeleteReason ? 'checked' : ''} onchange="prefSet({requireDeleteReason:this.checked})"> Motif obligatoire pour toute suppression (les éléments supprimés vont toujours dans la Corbeille)</label>` : ''}` }
   const re = $('#adm_roles'), CR = Object.entries(R).filter(([, r]) => r.custom); if (re) { re.classList.remove('mu'); re.innerHTML = CR.length ? `<div class="tw"><table><tr><th>Rôle</th><th>Autorisations</th><th>Comptes</th><th></th></tr>${CR.map(([k, r]) => `<tr><td>${esc(r.label)} <span class="mu" style="font-size:11px">${esc(k)}</span></td><td style="font-size:12px">${r.perms.map(x => esc(ADM.roles.perms[x] || x)).join(' · ') || '—'}</td><td>${ADM.users.filter(u => u.role === k && !u.disabled).length}</td><td><button onclick="roleDlg('${k}')">Modifier</button></td></tr>`).join('')}</table></div>` : '<p class="mu">Aucun rôle personnalisé.</p>' }
+  brPaint();
   const us = $('#aud_user'); if (us && us.options.length <= 1) us.innerHTML = '<option value="">Tous les utilisateurs</option>' + ADM.users.map(u => `<option value="${esc(u.username)}">${esc(u.displayName)} (${esc(u.username)})</option>`).join('');
   admPaintAudit();
 }
@@ -324,6 +428,32 @@ async function usrResetDo(id) { try { await api('POST', '/api/users/' + id + '/r
 async function usrToggle(id, dis) { const u = ADM.users.find(x => x.id === id); if (dis && !confirm('Désactiver le compte ' + u.username + ' ? Ses sessions seront fermées immédiatement.')) return; try { await api('PUT', '/api/users/' + id, { disabled: dis }); toast(dis ? 'Compte désactivé' : 'Compte réactivé'); admLoad() } catch (e) { toast(e.message, true) } }
 async function usrUnlock(id) { try { await api('POST', '/api/users/' + id + '/unlock', {}); toast('Compte déverrouillé'); admLoad() } catch (e) { toast(e.message, true) } }
 async function admBackup() { try { const r = await api('POST', '/api/backups', {}); toast('Sauvegarde créée : ' + r.backup); admLoad() } catch (e) { toast(e.message, true) } }
+/* ---------- Corbeille (éléments supprimés, restauration) ---------- */
+var TRV = { f: { status: 'deleted' }, items: [], types: {}, canRestore: false };
+function trashView() { setTimeout(trashLoad, 0); return `<div class="card"><div class="row"><h2 style="margin:0;flex:1">🗑 Corbeille</h2><span class="mu" style="font-size:13px">Les suppressions ne sont jamais définitives : chaque élément supprimé est conservé ici avec son auteur, sa date et son motif.</span></div><div class="row" style="margin:10px 0"><select id="tr_c" onchange="TRV.f.collection=this.value;trashLoad()"><option value="">Tous les types</option></select><select id="tr_s" onchange="TRV.f.status=this.value;trashLoad()"><option value="deleted" ${TRV.f.status === 'deleted' ? 'selected' : ''}>Supprimés</option><option value="restored" ${TRV.f.status === 'restored' ? 'selected' : ''}>Restaurés</option><option value="all" ${TRV.f.status === 'all' ? 'selected' : ''}>Tous</option></select><input id="tr_q" placeholder="Rechercher (nom, matricule, motif…)" value="${esc(TRV.f.q || '')}" onchange="TRV.f.q=this.value;trashLoad()" style="min-width:220px"><input type="date" id="tr_f" value="${esc(TRV.f.from || '')}" onchange="TRV.f.from=this.value;trashLoad()" title="supprimé depuis"><input type="date" id="tr_t" value="${esc(TRV.f.to || '')}" onchange="TRV.f.to=this.value;trashLoad()" title="jusqu’au"></div><div id="tr_l" class="mu">Chargement…</div></div>` }
+async function trashLoad() {
+  const q = Object.entries(TRV.f).filter(([, v]) => v).map(([k, v]) => k + '=' + encodeURIComponent(v)).join('&');
+  let r; try { r = await api('GET', '/api/trash?' + q) } catch (e) { const l = $('#tr_l'); if (l) l.innerHTML = '<p class="err">' + esc(e.message) + '</p>'; return }
+  TRV.items = r.items; TRV.types = r.types; TRV.canRestore = r.canRestore;
+  const c = $('#tr_c'); if (c && c.options.length <= 1) c.innerHTML = '<option value="">Tous les types</option>' + Object.entries(r.types).map(([k, v]) => `<option value="${k}" ${TRV.f.collection === k ? 'selected' : ''}>${esc(v)}</option>`).join('');
+  const l = $('#tr_l'); if (!l) return; l.classList.remove('mu');
+  l.innerHTML = `<p class="mu">${r.total} élément(s)</p><div class="tw"><table><tr><th>Élément</th><th>Type</th><th>Supprimé le</th><th>Par</th><th>Motif</th><th>État</th><th></th></tr>${r.items.map(e => `<tr><td><b>${esc(e.label)}</b><br><span class="mu" style="font-size:11px">id ${esc(e.recordId)}</span></td><td>${esc(e.type)}</td><td>${esc((e.deletedAt || '').slice(0, 16).replace('T', ' '))}</td><td>${esc(e.deletedByName || e.deletedBy)}</td><td>${esc(e.reason || '—')}</td><td>${e.status === 'deleted' ? '<span style="color:var(--bad)">supprimé</span>' : '<span style="color:var(--ok)">restauré</span><br><span class="mu" style="font-size:11px">' + esc((e.restoredAt || '').slice(0, 16).replace('T', ' ')) + ' · ' + esc(e.restoredBy) + '</span>'}</td><td style="white-space:nowrap"><button onclick="trashShow('${e.id}')">Détails</button> ${e.status === 'deleted' && TRV.canRestore ? `<button class="pri" onclick="trashRestoreDlg('${e.id}')">Restaurer</button>` : ''}</td></tr>`).join('') || '<tr><td colspan="7" class="mu">La corbeille est vide pour ces filtres.</td></tr>'}</table></div>`;
+}
+async function trashShow(id) {
+  try { const r = await api('GET', '/api/trash/' + id), e = r.entry;
+    modal(`<div style="min-width:min(92vw,600px)"><h3 style="margin-top:0">${esc(e.type)} : ${esc(e.label)}</h3><p class="mu" style="font-size:13px">Identifiant d’origine conservé : <b>${esc(e.recordId)}</b></p><h4>Historique</h4>${(e.history || []).map(h => `<div style="font-size:13px">${esc((h.at || '').slice(0, 16).replace('T', ' '))} — <b>${esc(h.action)}</b> par ${esc(h.by)}${h.reason ? ' · motif : ' + esc(h.reason) : ''}</div>`).join('')}<h4>Valeurs conservées</h4><div class="tw" style="max-height:300px;overflow:auto"><table>${Object.entries(e.data || {}).map(([k, v]) => `<tr><td class="mu">${esc(k)}</td><td style="font-size:12px">${esc(typeof v === 'string' ? v : JSON.stringify(v))}</td></tr>`).join('')}</table></div><div class="row" style="margin-top:12px">${e.status === 'deleted' && TRV.canRestore ? `<button class="pri" onclick="trashRestoreDlg('${e.id}')">Restaurer</button>` : ''}<button onclick="closeModal()">Fermer</button></div></div>`) } catch (x) { toast(x.message, true) }
+}
+async function trashRestoreDlg(id) {
+  const e = TRV.items.find(x => x.id === id) || { label: '', type: '' }; let c = [];
+  try { c = (await api('GET', '/api/trash/' + id + '/check')).conflicts } catch (x) { }
+  modal(`<div style="min-width:min(92vw,560px)"><h3 style="margin-top:0">Restaurer ${esc(e.type)} « ${esc(e.label)} »</h3><p class="mu" style="font-size:13px">L’élément retrouve son identifiant d’origine et tous ses liens. La restauration est inscrite au journal ; l’historique de la suppression reste consultable.</p>${c.length ? `<div style="border-left:4px solid var(--bad);padding:8px 12px;background:var(--bg);border-radius:6px"><b style="color:var(--bad)">⚠ Conflits à résoudre avant la restauration :</b><ul style="margin:6px 0">${c.map(x => `<li><b>${esc(x.type)}</b> — ${esc(x.message)}</li>`).join('')}</ul><span class="mu" style="font-size:12px">Corrigez ces points (modifiez ou déplacez l’élément en conflit, restaurez d’abord l’élément dont il dépend), puis réessayez.</span></div>` : '<p style="color:var(--ok)">Aucun conflit détecté ✔</p>'}<label>Motif de la restauration</label><input id="rs_r" placeholder="ex. suppression par erreur"><div class="err" id="ferr"></div><div class="row" style="margin-top:12px"><button class="pri" ${c.length ? 'disabled' : ''} onclick="trashRestore('${id}')">Restaurer</button><button onclick="closeModal()">Annuler</button></div></div>`);
+}
+async function trashRestore(id) {
+  try { await api('POST', '/api/trash/' + id + '/restore', { reason: $('#rs_r').value }); closeModal(); toast('Élément restauré');
+    if (ST.on && !ST.dirty) { const j = await api('GET', '/api/state'); stApply(j.data, j.rev) } else stPull();
+    trashLoad() }
+  catch (e) { if (e.body && e.body.conflicts) { $('#ferr').innerHTML = esc(e.message) + '<ul>' + e.body.conflicts.map(x => '<li>' + esc(x.message) + '</li>').join('') + '</ul>' } else $('#ferr').textContent = e.message }
+}
 /* ---------- appartenance aux groupes à la date de la séance (historique géré par le serveur) ---------- */
 function grpAt(x, date) {
   const h = Array.isArray(x.groupHistory) && x.groupHistory.length ? x.groupHistory : null;

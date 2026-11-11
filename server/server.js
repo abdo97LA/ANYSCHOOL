@@ -20,6 +20,7 @@ const AL = require('./lib/auditlog');
 const PF = require('./lib/platform');
 const ROLESX = require('./lib/roles');
 const TR = require('./lib/trash');
+const BR = require('./lib/branding');
 const VERSION = require('./package.json').version;
 const VENDOR = ['pdf.js', 'pdf.worker.js', 'xlsx.full.min.js', 'jspdf.umd.min.js'];
 const vendorMissing = () => VENDOR.filter(f => { try { return fs.statSync(path.join(__dirname, 'public', 'vendor', f)).size < 10000; } catch (e) { return true; } });
@@ -432,6 +433,7 @@ async function resolveTenant(req, u) {
   const p = u.pathname;
   let m = /^\/api\/form\/([^/]+)/.exec(p);
   if (m) { const id = PF.tenantOfToken(m[1], 32); return id === null ? null : id === '' ? legacyTenant() : tenantById(id); }
+  if (req.method === 'GET' && p === '/api/branding' && u.searchParams.get('etab')) return tenantBySlug(u.searchParams.get('etab'));
   if (req.method === 'POST' && p === '/api/login') {
     let b = {}; try { b = await body(req, 4096); } catch (e) { /* erreur traitée plus loin */ }
     const code = str(b && b.etab, 40).toLowerCase();
@@ -459,6 +461,7 @@ async function route(req, res) {
   const t = await resolveTenant(req, u);
   if (!t) {
     if (M === 'GET' && p === '/api/me') return json(res, 200, { auth: false, user: null, setupRequired: false, needCode: true, server: { version: VERSION, https: cfg.TLS } });
+    if (M === 'GET' && p === '/api/branding') return json(res, 200, { brand: { name: platform.settings.platformName || 'UniTimetable', reportName: '', nameAr: '', logo: '', colors: {}, slug: '' }, unknown: true });
     if (M === 'POST' && p === '/api/login') { if (limited('login:' + ip(req), cfg.LOGIN_RATE_PER_MIN, 60000)) return fail(res, 429, 'Trop de tentatives, réessayez dans une minute'); await A.dummyVerify('x', cfg.SCRYPT_N); return fail(res, 401, 'Code d’établissement, identifiant ou mot de passe incorrect', { needCode: true }); }
     if (/^\/api\/form\//.test(p)) return fail(res, 404, 'Lien invalide');
     if (M === 'POST' && p === '/api/logout') return json(res, 200, { ok: true }, { 'Set-Cookie': 'sid=; HttpOnly; SameSite=Strict; Path=/; Max-Age=0' });
@@ -487,7 +490,7 @@ async function tenantRoute(req, res, u) {
     if (M === 'GET' && !m[2]) {
       const ex = f.absenceId && store.absences.find(a => a.id === f.absenceId && a.status !== 'annulée');
       const ok = ALLOW_EARLY || nowMs() >= startMs(f), am = ex ? amendRule(f.session.teacherId, ex) : null;
-      return json(res, 200, { session: pubSession(f.session), students: f.session.students, canDeclare: ok, startsAt: f.session.date + ' ' + f.session.start, submitted: ex ? { absent: ex.absent.map(a => a.m), total: ex.total, remark: ex.remark, submittedAt: ex.submittedAt, status: ex.status, canAmend: am.ok, amendMsg: am.msg || '', amendUntil: am.until ? new Date(am.until).toISOString() : '' } : null });
+      return json(res, 200, { brand: BR.publicBrand(store.branding, T), session: pubSession(f.session), students: f.session.students, canDeclare: ok, startsAt: f.session.date + ' ' + f.session.start, submitted: ex ? { absent: ex.absent.map(a => a.m), total: ex.total, remark: ex.remark, submittedAt: ex.submittedAt, status: ex.status, canAmend: am.ok, amendMsg: am.msg || '', amendUntil: am.until ? new Date(am.until).toISOString() : '' } : null });
     }
     if (M === 'POST' && m[2]) {
       if (!sameOrigin(req)) return fail(res, 403, 'Origine refusée');
@@ -518,6 +521,8 @@ async function tenantRoute(req, res, u) {
     return fail(res, 405, 'Méthode non autorisée');
   }
 
+  /* ---- identité visuelle publique (page de connexion) : nom, logo si autorisé, couleurs ---- */
+  if (M === 'GET' && p === '/api/branding') return json(res, 200, { brand: BR.publicBrand(store.branding, T) }, { 'Cache-Control': 'no-cache' });
   /* ---- connexion ---- */
   if (M === 'POST' && p === '/api/login') {
     if (!sameOrigin(req)) return fail(res, 403, 'Origine refusée');
@@ -560,7 +565,7 @@ async function tenantRoute(req, res, u) {
     if (sess) { delete store.logins[sess.hash]; audit(req.user.superAdmin ? 'sortie de l’espace de l’établissement (Super Admin)' : 'déconnexion', req); persist(); }
     return json(res, 200, { ok: true }, { 'Set-Cookie': 'sid=; HttpOnly; SameSite=Strict; Path=/; Max-Age=0' });
   }
-  if (M === 'GET' && p === '/api/me') return json(res, 200, { auth: !!req.user, user: req.user ? meOf(req.user) : null, setupRequired: !store.users.length, tenant: tenantInfo(T), prefs: store.prefs || {}, server: { version: VERSION, https: cfg.TLS } });
+  if (M === 'GET' && p === '/api/me') return json(res, 200, { auth: !!req.user, user: req.user ? meOf(req.user) : null, setupRequired: !store.users.length, tenant: tenantInfo(T), prefs: store.prefs || {}, brand: req.user ? BR.full(store.branding, T) : BR.publicBrand(store.branding, T), server: { version: VERSION, https: cfg.TLS } });
 
   /* ---- API protégée ---- */
   if (!req.user) return fail(res, 401, 'Authentification requise');
@@ -624,6 +629,21 @@ async function tenantRoute(req, res, u) {
     }
   }
   /* ---- corbeille (suppression logique) et préférences de l'établissement ---- */
+  if (p === '/api/branding' && M === 'PUT') {
+    if (!need(req, res, 'institution.manage')) return;
+    let b; try { b = await body(req, 700 * 1024); } catch (e) { return fail(res, e.code || 400, e.msg); }
+    const r = BR.clean(b, store.branding); if (r.error) return fail(res, 400, r.error);
+    const before = BR.forAudit(Object.assign(BR.DEFAULT(), store.branding || {})), nb = r.value; nb.updatedAt = new Date(nowMs()).toISOString(); nb.updatedBy = req.user.username;
+    const after = BR.forAudit(nb), ev = [];
+    if (JSON.stringify(before.logo) !== JSON.stringify(after.logo)) ev.push(after.logo ? 'logo de l’établissement modifié' : 'logo de l’établissement retiré');
+    if (JSON.stringify(before.colors) !== JSON.stringify(after.colors)) ev.push(b.resetColors === true ? 'thème par défaut rétabli (couleurs)' : 'couleurs de l’établissement modifiées');
+    if (before.displayName !== after.displayName || before.reportName !== after.reportName || before.nameAr !== after.nameAr || JSON.stringify(before.logoPlaces) !== JSON.stringify(after.logoPlaces)) ev.push('identité visuelle modifiée (noms, emplacements du logo)');
+    store.branding = nb;
+    for (const e of ev) audit(e, req, { section: 'identité visuelle', avant: before, apres: after });
+    persist();
+    if (ev.length) { paudit('identité visuelle d’un établissement modifiée', null, { tenantId: T.id, etablissement: T.name, par: req.user.username, changements: ev }); persistPlatform(); }
+    return json(res, 200, { ok: true, brand: BR.full(store.branding, T) });
+  }
   if (p === '/api/prefs' && M === 'PUT') {
     if (!need(req, res, 'institution.manage')) return;
     let b; try { b = await body(req, 2048); } catch (e) { return fail(res, e.code || 400, e.msg); }
@@ -1072,7 +1092,7 @@ async function platformRoute(req, res, u) {
   if (!m) return fail(res, 404, 'Introuvable');
   const t = tenantById(m[1]); if (!t) return fail(res, 404, 'Établissement introuvable');
   const sub = m[2] || '';
-  if (sub === '' && M === 'GET') return withTenant(t, async ctx => json(res, 200, { tenant: PF.publicTenant(t), stats: tenantStats(ctx), isDefault: platform.settings.defaultTenantId === t.id }));
+  if (sub === '' && M === 'GET') return withTenant(t, async ctx => json(res, 200, { tenant: PF.publicTenant(t), stats: tenantStats(ctx), isDefault: platform.settings.defaultTenantId === t.id, brand: BR.full(ctx.store.branding, t) }));
   if (sub === '' && M === 'PUT') {
     const b = await rd(16384); if (!b) return;
     const f = PF.cleanTenantFields(b, t); for (const k of Object.keys(f)) if (f[k] === undefined) delete f[k];
