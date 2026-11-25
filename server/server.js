@@ -30,6 +30,7 @@ const DATA = cfg.DATA_DIR, PUB = path.join(__dirname, 'public');
 const CLOUD = cfg.STORAGE === 'supabase';
 const SB = CLOUD ? require('./lib/supabase') : null;
 log.init(CLOUD ? null : cfg.LOG_DIR, cfg.LOG_KEEP_DAYS, { quiet: process.env.UNITT_QUIET === '1' });
+if (cfg.STORAGE_NOTE) log.warn(cfg.STORAGE_NOTE);
 if (!CLOUD) fs.mkdirSync(DATA, { recursive: true });
 
 /* ----- instance unique : fichier verrou contenant le PID ----- */
@@ -1337,4 +1338,13 @@ function cloudHandler(req, res) {
   };
   const p = cloudQueue.then(run, run); cloudQueue = p.catch(() => { }); return p;   // une requête à la fois par instance (variables globales partagées)
 }
-module.exports = { cloudHandler };
+/* Export : api/index.js appelle cloudHandler (point d'entrée prévu par vercel.json). Si la plateforme charge ce
+   fichier directement comme fonction (détection automatique d'un « server.js »), l'export est aussi une fonction
+   (req, res) : même traitement, adresse d'origine restaurée comme dans api/index.js. */
+function serverlessEntry(req, res) {
+  const u = new URL(req.url, 'http://local'), p = u.searchParams.get('__path');
+  if (p !== null) { u.searchParams.delete('__path'); const q = u.searchParams.toString(); req.url = (p.startsWith('/') ? p : '/' + p) + (q ? '?' + q : ''); }
+  return cloudHandler(req, res);
+}
+serverlessEntry.cloudHandler = cloudHandler;
+module.exports = serverlessEntry;
