@@ -223,7 +223,7 @@ language plpgsql security definer set search_path = public as $$
 declare v_total bigint; v_items json; f json := coalesce(p_filter, '{}'::json);
 begin
   create temporary table if not exists _unitt_aq(id bigint, entry json) on commit drop;
-  delete from _unitt_aq;
+  delete from _unitt_aq where true;   -- Supabase (pg_safeupdate) refuse un DELETE sans WHERE
   insert into _unitt_aq select a.id, a.entry from unitt_audit a
    where a.tenant = p_tenant
      and (f->>'user' is null or lower(a.entry->>'user') = lower(f->>'user'))
