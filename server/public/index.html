@@ -436,7 +436,7 @@ const bar=p=>`<div style="min-width:70px"><div class="bar"><i style="width:${Mat
 const STC={'Terminée':'var(--ok)','En cours':'var(--ac)','En retard':'var(--bad)','Non défini':'var(--mu)'};
 const stChip=m=>`<span class="bdg" style="background:${STC[m.st]}">${m.st}</span>${m.al.length?` <span title="${esc(m.al.join(' · '))}" style="cursor:help">⚠</span>`:''}`;
 const pctT=p=>p==null?'Non défini':p.toFixed(1).replace('.',',')+' %';
-function pgSel(k,lab,opts,o){return`<select onchange="${o}.${k}=this.value;render()"><option value="">${lab}</option>${opts.map(x=>`<option value="${esc(x[0])}" ${(eval(o)[k]===x[0])?'selected':''}>${esc(x[1])}</option>`).join('')}</select>`}
+function pgSel(k,lab,opts,o){return`<select onchange="${o}.${k}=this.value;render()"><option value="">${lab}</option>${opts.map(x=>`<option value="${esc(x[0])}" ${(({'PG.f':PG.f,'PG.g':PG.g})[o][k]===x[0])?'selected':''}>${esc(x[1])}</option>`).join('')}</select>`}
 function progView(){const all=pgRows(),L=pgList(),uq=a=>[...new Set(a)].filter(x=>x!==undefined).sort(),V=PG.view;
  const nav=[['table','Tableau de suivi'],['group','Vue d’un groupe'],['global','Synthèse globale'],['volumes','Volumes horaires']].map(v=>`<button class="${V===v[0]?'on':''}" onclick="PG.view='${v[0]}';render()">${v[1]}</button>`).join('');
  const head=`<div class="card noprint"><div class="row"><h2 style="margin:0;flex:1">État d’avancement pédagogique</h2><button onclick="printDlg()">🖨 Imprimer</button><button onclick="pgXlsx()">⬇ Excel</button><button onclick="pgPdf()">⬇ PDF</button></div><div class="row">${nav}</div>
