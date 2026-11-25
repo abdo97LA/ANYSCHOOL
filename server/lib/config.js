@@ -29,7 +29,17 @@ const E = process.env;
 const abs = p => path.isAbsolute(p) ? p : path.resolve(ROOT, p);
 const num = (v, d, min, max) => { const n = Number(v); return Number.isFinite(n) && n >= (min ?? -Infinity) && n <= (max ?? Infinity) ? n : d; };
 
-const STORAGE = (E.UNITT_STORAGE || (E.VERCEL && E.SUPABASE_URL ? 'supabase' : 'files')).toLowerCase();
+/* Stockage : « files » (PC Windows / réseau local) ou « supabase » (en ligne).
+   Sur une plateforme sans serveur (Vercel, AWS Lambda) le disque de l'application est en lecture seule et n'est pas
+   conservé entre deux requêtes : le stockage fichiers y est impossible. On y impose donc TOUJOURS Supabase, quel que
+   soit le point d'entrée utilisé (api/index.js ou server.js chargé directement) et même si UNITT_STORAGE est absent,
+   vide, mal saisi (« Supabase », espaces) ou vaut « files ». Ainsi aucun dossier server/data n'est jamais créé en ligne. */
+const SERVERLESS = !!(E.VERCEL || E.AWS_LAMBDA_FUNCTION_NAME || E.LAMBDA_TASK_ROOT);
+const STORAGE_REQUESTED = String(E.UNITT_STORAGE || '').trim().toLowerCase();
+const STORAGE = SERVERLESS ? 'supabase' : (STORAGE_REQUESTED === 'supabase' ? 'supabase' : 'files');
+const STORAGE_NOTE = SERVERLESS && STORAGE_REQUESTED && STORAGE_REQUESTED !== 'supabase'
+  ? 'UNITT_STORAGE="' + E.UNITT_STORAGE + '" ignoré : sur Vercel le stockage est toujours Supabase (disque en lecture seule). Supprimez cette variable ou mettez « supabase ».'
+  : (SERVERLESS && !E.SUPABASE_URL ? 'SUPABASE_URL n’est pas défini pour cet environnement Vercel : les requêtes échoueront tant que SUPABASE_URL et SUPABASE_SERVICE_ROLE_KEY ne sont pas configurés.' : '');
 const DATA_DIR = abs(E.DATA_DIR || 'data');
 const cfg = {
   ROOT, CONFIG_FILE, configLoaded,
@@ -55,7 +65,7 @@ const cfg = {
   TLS_KEY: E.TLS_KEY ? abs(E.TLS_KEY) : '',
   PUBLIC_URL: (E.PUBLIC_URL || '').replace(/\/$/, ''),
   TRUST_PROXY: E.TRUST_PROXY === '1' || (STORAGE === 'supabase' && E.TRUST_PROXY !== '0'),   // derrière Vercel : adresse réelle et https via les en-têtes du proxy
-  STORAGE,
+  STORAGE, SERVERLESS, STORAGE_NOTE,
   ADMIN_PASSWORD: E.ADMIN_PASSWORD || '',          // héritage : crée le compte « admin » au premier démarrage uniquement
   // réservé aux tests automatisés — ne jamais activer en production
   ALLOW_TEST_CLOCK: E.ALLOW_TEST_CLOCK === '1',
