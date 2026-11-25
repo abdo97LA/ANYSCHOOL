@@ -23,7 +23,7 @@ const LIBS = [
     for (const u of L.urls) {
       try {
         const r = await fetch(u); if (!r.ok) throw new Error('HTTP ' + r.status);
-        const buf = Buffer.from(await r.arrayBuffer()); if (buf.length < 10000 || !L.check.test(buf.subarray(0, 400000).toString('latin1'))) throw new Error('contenu inattendu');
+        const buf = Buffer.from(await r.arrayBuffer()); if (buf.length < 10000 || !L.check.test(buf.toString('latin1'))) throw new Error('contenu inattendu');
         fs.writeFileSync(dest + '.tmp', buf); fs.renameSync(dest + '.tmp', dest);
         man[L.file] = { source: u, bytes: buf.length, sha256: crypto.createHash('sha256').update(buf).digest('hex'), at: new Date().toISOString() };
         console.log('[téléchargé] ' + L.file + ' (' + Math.round(buf.length / 1024) + ' Ko) depuis ' + new URL(u).host); done = true; break;
